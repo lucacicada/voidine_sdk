@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CircularBuffer" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A circular buffer implementation for efficient data storage and retrieval.
+	</brief_description>
+	<description>
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="advance">
+			<return type="void" />
+			<param index="0" name="steps" type="int" default="1" />
+			<description>
+			</description>
+		</method>
+		<method name="append">
+			<return type="void" />
+			<param index="0" name="value" type="Variant" />
+			<description>
+				Appends [param value] at the end of the array (alias of [method push_back]).
+			</description>
+		</method>
+		<method name="append_array">
+			<return type="void" />
+			<param index="0" name="array" type="Array" />
+			<description>
+				Appends another [param array] at the end of this array.
+			</description>
+		</method>
+		<method name="array_get" qualifiers="const">
+			<return type="Variant" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Retrieves the element at the specified index in the buffer.
+				If the index is out of bounds, [code]null[/code] is silently returned.
+			</description>
+		</method>
+		<method name="array_set">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<param index="1" name="value" type="Variant" />
+			<description>
+				Sets the element at the specified index in the buffer to the given value.
+				If the index is out of bounds, nothing happens.
+			</description>
+		</method>
+		<method name="at" qualifiers="const">
+			<return type="Variant" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Retrieves the element at the specified index in the buffer.
+				If the index is negative, [param index] is considered relative to the end of the array.
+			</description>
+		</method>
+		<method name="back" qualifiers="const">
+			<return type="Variant" />
+			<description>
+				Returns the last element of the buffer. If the buffer is empty, fails and returns [code]null[/code]. See also [method front].
+			</description>
+		</method>
+		<method name="capacity" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the capacity of the buffer.
+				The capacity is the maximum number of elements the buffer can hold before overwriting old data.
+			</description>
+		</method>
+		<method name="clear">
+			<return type="void" />
+			<description>
+				Clear the buffer by resetting its size to zero.
+				[b]Note:[/b] To free memory use [method resize][code](0)[/code].
+			</description>
+		</method>
+		<method name="duplicate" qualifiers="const">
+			<return type="Array" />
+			<description>
+			</description>
+		</method>
+		<method name="fill">
+			<return type="void" />
+			<param index="0" name="value" type="Variant" />
+			<description>
+				Clears and fills the entire buffer capacity with the specified value.
+			</description>
+		</method>
+		<method name="front" qualifiers="const">
+			<return type="Variant" />
+			<description>
+				Returns the first element of the array. If the array is empty, fails and returns [code]null[/code]. See also [method back].
+			</description>
+		</method>
+		<method name="head" qualifiers="const">
+			<return type="int" />
+			<description>
+			</description>
+		</method>
+		<method name="insert">
+			<return type="void" />
+			<param index="0" name="position" type="int" />
+			<param index="1" name="value" type="Variant" />
+			<description>
+			</description>
+		</method>
+		<method name="is_empty" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if the buffer is empty.
+			</description>
+		</method>
+		<method name="pop_at">
+			<return type="Variant" />
+			<param index="0" name="position" type="int" />
+			<description>
+			</description>
+		</method>
+		<method name="pop_back">
+			<return type="Variant" />
+			<description>
+			</description>
+		</method>
+		<method name="pop_front">
+			<return type="Variant" />
+			<description>
+			</description>
+		</method>
+		<method name="push_back">
+			<return type="void" />
+			<param index="0" name="value" type="Variant" />
+			<description>
+			</description>
+		</method>
+		<method name="push_front">
+			<return type="void" />
+			<param index="0" name="value" type="Variant" />
+			<description>
+			</description>
+		</method>
+		<method name="resize">
+			<return type="void" />
+			<param index="0" name="capacity" type="int" />
+			<description>
+			</description>
+		</method>
+		<method name="seek">
+			<return type="void" />
+			<param index="0" name="position" type="int" />
+			<description>
+			</description>
+		</method>
+		<method name="set_size">
+			<return type="void" />
+			<param index="0" name="size" type="int" />
+			<description>
+			</description>
+		</method>
+		<method name="size" qualifiers="const">
+			<return type="int" />
+			<description>
+
+			</description>
+		</method>
+		<method name="slice" qualifiers="const">
+			<return type="Array" />
+			<param index="0" name="begin" type="int" />
+			<param index="1" name="end" type="int" default="2147483647" />
+			<param index="2" name="step" type="int" default="1" />
+			<description>
+			</description>
+		</method>
+	</methods>
+</class>
