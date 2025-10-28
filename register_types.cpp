@@ -4,6 +4,7 @@
 #include "network.h"
 #include "network_input.h"
 #include "network_input_replica_config.h"
+#include "network_time.h"
 #include "rollback_multiplayer.h"
 #include "rollback_replica_config.h"
 #include "rollback_synchronizer.h"
@@ -14,6 +15,7 @@
 #include "editor/voidine_editor_plugin.h"
 #endif
 
+static NetworkTime *_network_time = nullptr;
 static Network *_network = nullptr;
 
 void initialize_voidine_sdk_module(ModuleInitializationLevel p_level) {
@@ -21,6 +23,10 @@ void initialize_voidine_sdk_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(CircularBuffer);
 
 		GDREGISTER_CLASS(Network);
+
+		GDREGISTER_CLASS(NetworkTime);
+		GDREGISTER_CLASS(ReferenceClock);
+		GDREGISTER_CLASS(SimulationClock);
 
 		GDREGISTER_CLASS(NetworkInput);
 		GDREGISTER_CLASS(NetworkInputReplicaConfig);
@@ -35,6 +41,9 @@ void initialize_voidine_sdk_module(ModuleInitializationLevel p_level) {
 
 		// do not edit the default main loop type
 		// ProjectSettings::get_singleton()->set("application/run/main_loop_type", "RollbackTree");
+
+		// _network_time = memnew(NetworkTime);
+		// Engine::get_singleton()->add_singleton(Engine::Singleton("NetworkTime", NetworkTime::get_singleton()));
 
 		_network = memnew(Network);
 		Engine::get_singleton()->add_singleton(Engine::Singleton("Network", Network::get_singleton()));
@@ -51,5 +60,6 @@ void uninitialize_voidine_sdk_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
 		// Engine::get_singleton()->remove_singleton("Network");
 		memdelete(_network);
+		// memdelete(_network_time);
 	}
 }

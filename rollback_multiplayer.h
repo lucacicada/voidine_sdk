@@ -47,6 +47,7 @@ private:
 		RollbackTree::get_singleton()->adjust_network_clock(p_offset);
 	}
 	void _set_timestamp(double p_time) {
+		// TODO: now is so bad its even unsafe
 		RollbackTree::get_singleton()->set_network_clock_unsafe_timestamp(p_time);
 	}
 
@@ -58,22 +59,25 @@ private:
 
 	MultiplayerState multiplayer_state = STATE_OFFLINE;
 	void _update_state();
+	void _peer_packet(int p_peer_id, const Vector<uint8_t> &p_packet);
+	void _peer_authenticating(int peer_id);
+	Error send_ping_to_server(int p_ping_request_index);
 
 protected:
 	static void _bind_methods();
 
-	Error send_ping_to_server(int p_ping_request_index);
-	void _peer_packet(int p_peer_id, const Vector<uint8_t> &p_packet);
-
 public:
-	// const int CUSTOM_COMMAND_MAGIC = 0x52424b4d; // "RBKM"
-
 	enum CustomCommands {
 		CUSTOM_COMMAND_PING = 1,
 		CUSTOM_COMMAND_PONG = 2,
 	};
 
+	virtual void set_multiplayer_peer(const Ref<MultiplayerPeer> &p_peer) override;
 	virtual Error poll() override;
+
+	// check if its a server online (not a OfflineMultiplayerPeer)
+	// usefull for rollback systems to avoid triggering rollback while offline
+	virtual bool is_online_server() const;
 
 	RollbackMultiplayer();
 };

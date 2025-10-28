@@ -2,8 +2,8 @@
 
 #include "network.h"
 
+#include "core/os/os.h"
 #include "core/os/thread_safe.h"
-#include "core/os/time.h"
 #include "rollback_synchronizer.h"
 #include "scene/main/scene_tree.h"
 
@@ -18,7 +18,7 @@ private:
 	// learn about network time
 	// clocks are in fraction seconds (double) instead of uint64_t
 	// fraction seconds are easier to work with, they maintain solid precision for a very long time
-	// double has 53 bits of mantissa (precision)
+	// double has 53 bits of mantissa (precision) (significand)
 
 	static double get_raw_time() {
 		return OS::get_singleton()->get_ticks_usec() / 1000000.0;
