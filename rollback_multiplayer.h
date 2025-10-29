@@ -38,19 +38,6 @@ private:
 	FixedBuffer<PingSample> sample_buffer{ 8 };
 	void _adjust_clock();
 
-	double get_network_time() const {
-		// TODO: this circular calls are insanely bad
-		return RollbackTree::get_singleton()->get_network_clock_time();
-	}
-	void adjust_network_clock(double p_offset) {
-		// TODO: THIS IS A BAD IDEA, do not call adjust directly from here
-		RollbackTree::get_singleton()->adjust_network_clock(p_offset);
-	}
-	void _set_timestamp(double p_time) {
-		// TODO: now is so bad its even unsafe
-		RollbackTree::get_singleton()->set_network_clock_unsafe_timestamp(p_time);
-	}
-
 	enum MultiplayerState {
 		STATE_OFFLINE,
 		STATE_SERVER,
@@ -58,6 +45,8 @@ private:
 	};
 
 	MultiplayerState multiplayer_state = STATE_OFFLINE;
+	MultiplayerState last_multiplayer_state = STATE_OFFLINE;
+
 	void _update_state();
 	void _peer_packet(int p_peer_id, const Vector<uint8_t> &p_packet);
 	void _peer_authenticating(int peer_id);
@@ -74,6 +63,9 @@ public:
 
 	virtual void set_multiplayer_peer(const Ref<MultiplayerPeer> &p_peer) override;
 	virtual Error poll() override;
+
+	virtual Error object_configuration_add(Object *p_obj, Variant p_config) override;
+	virtual Error object_configuration_remove(Object *p_obj, Variant p_config) override;
 
 	// check if its a server online (not a OfflineMultiplayerPeer)
 	// usefull for rollback systems to avoid triggering rollback while offline

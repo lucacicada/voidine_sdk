@@ -1,10 +1,11 @@
 #include "rollback_multiplayer.h"
 #include "network.h"
-#include "network_time.h"
 #include "rollback_tree.h"
 
 #include "core/io/marshalls.h"
 #include "core/os/os.h"
+#include "scene/main/scene_tree.h"
+#include "scene/main/window.h"
 
 bool RollbackMultiplayer::is_online_server() const {
 	return multiplayer_state == STATE_SERVER;
@@ -27,7 +28,36 @@ void RollbackMultiplayer::set_multiplayer_peer(const Ref<MultiplayerPeer> &p_pee
 	// start the network time when the peer is set
 	// TODO: can this break? yes, if a dev create a server set this peer, then set it to offline, then set the server again
 	// we would have reset the server time, but in this case, blame the dev?
-	// NetworkTime::get_singleton()->set_time(0);
+	Network::get_singleton()->reset_time();
+}
+
+Error RollbackMultiplayer::object_configuration_add(Object *p_obj, Variant p_config) {
+	if (p_obj == nullptr && p_config.get_type() == Variant::NODE_PATH) {
+		if (SceneTree::get_singleton()->get_multiplayer() == this) {
+			const NodePath tree_root_path = NodePath("/" + SceneTree::get_singleton()->get_root()->get_name());
+			if (p_config == tree_root_path) {
+				// we are getting set to the root tree, start the simulation
+				// TODO: RollbackTree::get_singleton() can be null here, as the SceneTree constructor call this function immediately
+				// RollbackTree::get_singleton()->get_multiplayer(); // if we are the multiplayer, start the simulation
+				// RollbackTree::get_singleton()->time_reset_requested = true;
+			}
+		}
+	}
+
+	return SceneMultiplayer::object_configuration_add(p_obj, p_config);
+}
+
+Error RollbackMultiplayer::object_configuration_remove(Object *p_obj, Variant p_config) {
+	if (p_obj == nullptr && p_config.get_type() == Variant::NODE_PATH) {
+		if (SceneTree::get_singleton()->get_multiplayer() == this) {
+			const NodePath tree_root_path = NodePath("/" + SceneTree::get_singleton()->get_root()->get_name());
+			if (p_config == tree_root_path) {
+				// we are getting removed from the root tree, end the simulation
+			}
+		}
+	}
+
+	return SceneMultiplayer::object_configuration_remove(p_obj, p_config);
 }
 
 // poll can be executed manually by the user, or automatically in SceneTree before the process step (see SceneTree::"process_frame" signal)
@@ -41,7 +71,7 @@ Error RollbackMultiplayer::poll() {
 		if (ping_timer.elapsed()) {
 			++sample_index;
 			PingSample sample;
-			sample.ping_sent = get_network_time();
+			sample.ping_sent = Network::get_singleton()->_reference_clock_ptr->get_time();
 			awaiting_samples[sample_index] = sample;
 
 			err = send_ping_to_server(sample_index);
@@ -75,14 +105,18 @@ void RollbackMultiplayer::_peer_packet(int p_peer_id, const Vector<uint8_t> &p_p
 			ERR_FAIL_COND(p_packet.size() != 1 + 4); // 1 plus 8 bytes idx
 
 			Vector<uint8_t> out;
-			out.resize(1 + 4 + 8);
+			out.resize(1 + 4 + 8 + 8);
 			{
-				const double ticks = get_network_time();
+				// time is used to smooth the clocks
+				const double time = Network::get_singleton()->_reference_clock_ptr->get_time();
+				// source of truth, if client-server ticks is too big, snap
+				const uint64_t ticks = Network::get_singleton()->_network_frames;
 
 				uint8_t *w = out.ptrw();
 				w[0] = CUSTOM_COMMAND_PONG;
 				memcpy(&w[1], &r[1], 4); // copy back the idx
-				encode_double(ticks, &w[1 + 4]); // server clock quantized
+				encode_double(time, &w[1 + 4]); // server clock raw
+				encode_uint64(ticks, &w[1 + 4 + 8]); // server tick
 			}
 
 			// // TODO: grab stats from server side to pass to client for better clock discipline
@@ -107,12 +141,13 @@ void RollbackMultiplayer::_peer_packet(int p_peer_id, const Vector<uint8_t> &p_p
 		const uint8_t *r = p_packet.ptr();
 		const uint8_t packet_type = r[0];
 		if (packet_type == CUSTOM_COMMAND_PONG) {
-			ERR_FAIL_COND(p_packet.size() != 1 + 4 + 8); // 1 plus 8 bytes idx, 8 bytes clock, 8 bytes tick
+			ERR_FAIL_COND(p_packet.size() != 1 + 4 + 8 + 8);
 
 			const uint32_t idx = decode_uint32(&r[1]);
 			const double server_clock = decode_double(&r[1 + 4]); // TODO: Validate server clock, it should be in some boundary
+			const uint64_t server_tick = decode_uint64(&r[1 + 4 + 8]);
 
-			const double pong_received = get_network_time();
+			const double pong_received = Network::get_singleton()->_reference_clock_ptr->get_time();
 
 			if (!awaiting_samples.has(idx)) {
 				return; // packet drop somewhere
@@ -126,7 +161,10 @@ void RollbackMultiplayer::_peer_packet(int p_peer_id, const Vector<uint8_t> &p_p
 			sample.pong_received = pong_received;
 
 			if (sample_buffer.size() == 0) {
-				_set_timestamp(server_clock);
+				Network::get_singleton()->_reference_clock_ptr->set_time(server_clock);
+				Network::get_singleton()->_simulation_clock_ptr->set_time(Network::get_singleton()->_reference_clock_ptr->get_time());
+				Network::get_singleton()->_network_frames = Network::get_singleton()->_reference_clock_ptr->get_reference_frames();
+				// Network::get_singleton()->_network_frames = server_tick; // TODO: do something here
 			}
 
 			sample_buffer.append(sample);
@@ -167,37 +205,20 @@ void RollbackMultiplayer::_adjust_clock() {
 	const int adjust_steps = 8;
 
 	if (Math::abs(offset) > panic_threshold) {
-		adjust_network_clock(offset);
-		// sorted_samples.clear();
+		// Network::get_singleton()->_reference_clock_ptr->adjust(offset);
+
 		awaiting_samples.clear();
 	} else {
 		const double nudge = offset / double(adjust_steps);
 
-		// TODO: THIS IS A BAD IDEA, do not call adjust directly from here
-		adjust_network_clock(nudge);
+		// Network::get_singleton()->_reference_clock_ptr->adjust(nudge);
 	}
 }
 
 void RollbackMultiplayer::_peer_authenticating(int peer_id) {
 	if (peer_id == MultiplayerPeer::TARGET_PEER_SERVER) {
-		// NetworkTime::get_singleton()->set_time(0);
-
-		_set_timestamp(0);
+		//
 	}
-
-	// if (peer_id != MultiplayerPeer::TARGET_PEER_SERVER) {
-	// 	Vector<uint8_t> buf;
-	// 	buf.resize(10);
-	// 	{
-	// 		const uint16_t AUTH_TIMESTAMP_MAGIC = 0xABCD;
-	// 		const double now = get_network_time();
-
-	// 		uint8_t *w = buf.ptrw();
-	// 		encode_uint16(AUTH_TIMESTAMP_MAGIC, &w[0]);
-	// 		encode_double(now, &w[2]);
-	// 	}
-	// 	send_auth(peer_id, buf);
-	// }
 }
 
 void RollbackMultiplayer::_bind_methods() {
@@ -213,15 +234,14 @@ RollbackMultiplayer::RollbackMultiplayer() {
 
 void RollbackMultiplayer::_update_state() {
 	Ref<MultiplayerPeer> peer = get_multiplayer_peer();
+	MultiplayerPeer::ConnectionStatus status = peer.is_valid() ? peer->get_connection_status() : MultiplayerPeer::CONNECTION_DISCONNECTED;
+	// if (last_connection_status != status) {
+	// }
 
-	if (peer.is_valid() && peer->get_connection_status() == MultiplayerPeer::CONNECTION_CONNECTED) {
+	if (status == MultiplayerPeer::CONNECTION_CONNECTED) {
 		if (peer->get_unique_id() == MultiplayerPeer::TARGET_PEER_SERVER) {
-			// if (peer->is_class("OfflineMultiplayerPeer")) {
-			// 	multiplayer_state = STATE_OFFLINE;
-			// }
-
 			// a peer that cannot send data is offline
-			if (peer->get_max_packet_size() == 0) {
+			if (peer->get_max_packet_size() == 0 || peer->is_class("OfflineMultiplayerPeer")) {
 				multiplayer_state = STATE_OFFLINE;
 			} else {
 				multiplayer_state = STATE_SERVER;

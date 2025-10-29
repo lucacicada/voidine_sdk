@@ -8,10 +8,16 @@ static double get_wall_time() {
 	return OS::get_singleton()->get_ticks_usec() / 1000000.0;
 }
 
+// about network time:
+// clocks are in fraction seconds (double) instead of uint64_t
+// fraction seconds are easier to work with, they maintain solid precision for a very long time
+// double has 53 bits of significand precision
+
 class ReferenceClock : public Object {
 	GDCLASS(ReferenceClock, Object);
 
 private:
+	friend class Network;
 	friend class RollbackTree;
 
 	double offset = 0;
@@ -33,7 +39,7 @@ public:
 		offset += p_offset;
 	}
 
-	uint64_t get_reference_frames() const {
+	uint64_t get_reference_frames() const { //TODO: move outside the clock, clocks runs independantly of any external settings
 		return uint64_t(get_time() * Engine::get_singleton()->get_physics_ticks_per_second());
 	}
 };
@@ -42,6 +48,7 @@ class SimulationClock : public Object {
 	GDCLASS(SimulationClock, Object);
 
 private:
+	friend class Network;
 	friend class RollbackTree;
 
 	double time = 0;
@@ -49,7 +56,7 @@ private:
 	double stretch_factor = 1.0;
 	double accumulator = 0;
 	double integral_error = 0; // correct stretch over time
-	int steps = 0; // remmeber how many steps we are currently taking
+	int steps = 0; // remeber how many steps we are currently taking
 
 protected:
 	static void _bind_methods();
@@ -66,12 +73,16 @@ public:
 	void set_stretch_factor(double p_stretch_factor) {
 		stretch_factor = p_stretch_factor;
 	}
-	double get_stretch_factor() const {
+	double get_stretch_factor() const { // TODO: rename to time_scale/step_scale
 		return stretch_factor;
 	}
 	void adjust(double p_offset) {
 		time += p_offset;
 	}
+	uint64_t get_simulated_frames() const { //TODO: move outside the clock, clocks runs independantly of any external settings
+		return uint64_t(get_time() * Engine::get_singleton()->get_physics_ticks_per_second());
+	}
+
 	void step() {
 		const double current_step = get_wall_time();
 		const double step_duration = current_step - last_time;
@@ -79,7 +90,7 @@ public:
 		adjust(step_duration * stretch_factor);
 	}
 
-	void stretch_towards(double p_time, double p_step) {
+	void stretch_towards(double p_time, double p_step) { // TODO: rename to adjust_towards
 		const double Kp = 0.1;
 		const double Ki = 0.01;
 
@@ -122,8 +133,22 @@ private:
 	ReferenceClock *_reference_clock_ptr = nullptr;
 	SimulationClock *_simulation_clock_ptr = nullptr;
 
-	ReferenceClock _reference_clock;
-	SimulationClock _simulation_clock;
+	void reset_time() {
+		// _reference_clock_ptr->set_time(0);
+		// _simulation_clock_ptr->set_time(Network::get_singleton()->_reference_clock_ptr->get_time());
+
+		const double n = get_wall_time();
+		_reference_clock_ptr->offset = -n;
+		_simulation_clock_ptr->last_time = n;
+		_simulation_clock_ptr->time = 0.0;
+		_simulation_clock_ptr->accumulator = 0.0;
+
+		_simulation_clock_ptr->stretch_factor = 1.0;
+		_simulation_clock_ptr->integral_error = 0.0;
+		_simulation_clock_ptr->steps = 0;
+
+		_network_frames = 0;
+	}
 
 	bool _in_rollback = false; // if the current frame is a rollback frame
 	uint64_t _network_frames = 0; // frame elapsed since start, increments by 1 each physics frame
@@ -137,31 +162,11 @@ public:
 	ReferenceClock *get_reference_clock() const { return _reference_clock_ptr; }
 	SimulationClock *get_simulation_clock() const { return _simulation_clock_ptr; }
 
-	//
-	double get_system_time() const { return _reference_clock.get_time(); }
-
 	bool is_in_rollback_frame() const { return _in_rollback; }
 
 	// Current network time in frames.
 	uint64_t get_network_frames() const { return _network_frames; }
 	uint64_t get_tick() const { return _network_frames; }
-
-	// Current network time in microseconds.
-	uint64_t get_network_ticks_usec() const { return (_network_frames * 1'000'000) / Engine::get_singleton()->get_physics_ticks_per_second(); }
-	double get_network_time() const { return _network_frames / double(Engine::get_singleton()->get_physics_ticks_per_second()); }
-
-	// for debugging/testing purposes
-	void reset() {
-		_network_frames = 0;
-		_reference_clock.set_time(0);
-	}
-
-	// Now many network ticks per second (same as physics ticks per second).
-	uint64_t get_network_ticks_per_second() const { return Engine::get_singleton()->get_physics_ticks_per_second(); }
-
-	// TODO: move to NetworkTime singleton
-	uint64_t get_ticks_msec() const { return (_network_frames * 1'000) / Engine::get_singleton()->get_physics_ticks_per_second(); }
-	uint64_t get_ticks_usec() const { return (_network_frames * 1'000'000) / Engine::get_singleton()->get_physics_ticks_per_second(); }
 
 	Network();
 	virtual ~Network();

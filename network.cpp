@@ -7,7 +7,8 @@ void ReferenceClock::_bind_methods() {
 
 void SimulationClock::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_time"), &SimulationClock::get_time);
-	ClassDB::bind_method(D_METHOD("get_stretch_factor"), &SimulationClock::get_stretch_factor);
+	ClassDB::bind_method(D_METHOD("get_time_scale"), &SimulationClock::get_stretch_factor);
+	ClassDB::bind_method(D_METHOD("get_simulated_frames"), &SimulationClock::get_simulated_frames);
 }
 
 Network *Network::get_singleton() {
@@ -17,8 +18,6 @@ Network *Network::get_singleton() {
 void Network::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_in_rollback_frame"), &Network::is_in_rollback_frame);
 	ClassDB::bind_method(D_METHOD("get_network_frames"), &Network::get_network_frames);
-	ClassDB::bind_method(D_METHOD("reset"), &Network::reset);
-	ClassDB::bind_method(D_METHOD("get_system_time"), &Network::get_system_time);
 
 	ClassDB::bind_method(D_METHOD("get_reference_clock"), &Network::get_reference_clock);
 	ClassDB::bind_method(D_METHOD("get_simulation_clock"), &Network::get_simulation_clock);
