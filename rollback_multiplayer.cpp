@@ -2,33 +2,20 @@
 #include "network.h"
 #include "rollback_tree.h"
 
+#include "modules/enet/enet_multiplayer_peer.h"
+
 #include "core/io/marshalls.h"
 #include "core/os/os.h"
 #include "scene/main/scene_tree.h"
 #include "scene/main/window.h"
 
 bool RollbackMultiplayer::is_online_server() const {
-	return multiplayer_state == STATE_SERVER;
+	return rollback_state == ROLLBACK_STATE_SERVER;
 }
 
 void RollbackMultiplayer::set_multiplayer_peer(const Ref<MultiplayerPeer> &p_peer) {
-	const Ref<MultiplayerPeer> current_multiplayer_peer = SceneMultiplayer::get_multiplayer_peer();
-
-	if (p_peer == current_multiplayer_peer) {
-		return;
-	}
-
-	ERR_FAIL_COND_MSG(p_peer.is_valid() && p_peer->get_connection_status() == MultiplayerPeer::CONNECTION_DISCONNECTED,
-			"Supplied MultiplayerPeer must be connecting or connected.");
-
 	SceneMultiplayer::set_multiplayer_peer(p_peer);
-
-	_update_state();
-
-	// start the network time when the peer is set
-	// TODO: can this break? yes, if a dev create a server set this peer, then set it to offline, then set the server again
-	// we would have reset the server time, but in this case, blame the dev?
-	Network::get_singleton()->reset_time();
+	_update_rollback_state();
 }
 
 Error RollbackMultiplayer::object_configuration_add(Object *p_obj, Variant p_config) {
@@ -65,112 +52,130 @@ Error RollbackMultiplayer::object_configuration_remove(Object *p_obj, Variant p_
 // the Error appear to be unused
 Error RollbackMultiplayer::poll() {
 	Error err = SceneMultiplayer::poll();
-	_update_state();
+	_update_rollback_state();
 
-	if (multiplayer_state == STATE_CLIENT) {
+	if (rollback_state == ROLLBACK_STATE_CLIENT) {
 		if (ping_timer.elapsed()) {
-			++sample_index;
-			PingSample sample;
-			sample.ping_sent = Network::get_singleton()->_reference_clock_ptr->get_time();
-			awaiting_samples[sample_index] = sample;
-
-			err = send_ping_to_server(sample_index);
+			err = ping();
 		}
 	}
 
 	return err;
 }
 
-Error RollbackMultiplayer::send_ping_to_server(int p_ping_request_index) {
-	ERR_FAIL_COND_V(get_unique_id() == 1, ERR_UNAVAILABLE);
-	ERR_FAIL_COND_V(!SceneMultiplayer::get_connected_peers().has(MultiplayerPeer::TARGET_PEER_SERVER), ERR_UNAVAILABLE);
+Error RollbackMultiplayer::ping() {
+	ERR_FAIL_COND_V_MSG(get_unique_id() == 1, ERR_UNAVAILABLE, "Server cannot send ping to itself.");
+	ERR_FAIL_COND_V_MSG(!SceneMultiplayer::get_connected_peers().has(MultiplayerPeer::TARGET_PEER_SERVER), ERR_UNAVAILABLE, "Cannot send ping to server when not connected.");
 
-	Vector<uint8_t> out;
-	out.resize(1 + 4); // packet_type + idx
+	// get a new sample
+	++sample_index;
+	PingSample sample;
+	sample.ping_sent = Network::get_singleton()->_reference_clock_ptr->get_time();
+	awaiting_samples[sample_index] = sample;
 
-	{
-		uint8_t *w = out.ptrw();
-		w[0] = CUSTOM_COMMAND_PING;
-		encode_uint32(p_ping_request_index, &w[1]);
-	}
+	Vector<uint8_t> packet;
+	packet.resize(6);
+	packet.write[0] = SceneMultiplayer::NETWORK_COMMAND_RAW | CMD_FLAG_PING_PONG_SHIFT;
+	packet.write[1] = COMMAND_PING;
+	encode_uint32(sample_index, &packet.write[2]);
 
-	return send_bytes(out, MultiplayerPeer::TARGET_PEER_SERVER, MultiplayerPeer::TRANSFER_MODE_UNRELIABLE);
+	Ref<MultiplayerPeer> peer = get_multiplayer_peer();
+	ERR_FAIL_COND_V(peer.is_null(), ERR_UNAVAILABLE);
+
+	peer->set_transfer_channel(0);
+	peer->set_transfer_mode(MultiplayerPeer::TRANSFER_MODE_UNRELIABLE);
+	return send_command(MultiplayerPeer::TARGET_PEER_SERVER, packet.ptr(), packet.size());
 }
 
-void RollbackMultiplayer::_peer_packet(int p_peer_id, const Vector<uint8_t> &p_packet) {
-	if (get_unique_id() == 1 && p_peer_id != 1 && p_packet.size() > 1) { // Server side
-		const uint8_t *r = p_packet.ptr();
-		const uint8_t packet_type = r[0];
-		if (packet_type == CUSTOM_COMMAND_PING) { // PACKET_TYPE_PING
-			ERR_FAIL_COND(p_packet.size() != 1 + 4); // 1 plus 8 bytes idx
-
-			Vector<uint8_t> out;
-			out.resize(1 + 4 + 8 + 8);
-			{
-				// time is used to smooth the clocks
-				const double time = Network::get_singleton()->_reference_clock_ptr->get_time();
-				// source of truth, if client-server ticks is too big, snap
-				const uint64_t ticks = Network::get_singleton()->_network_frames;
-
-				uint8_t *w = out.ptrw();
-				w[0] = CUSTOM_COMMAND_PONG;
-				memcpy(&w[1], &r[1], 4); // copy back the idx
-				encode_double(time, &w[1 + 4]); // server clock raw
-				encode_uint64(ticks, &w[1 + 4 + 8]); // server tick
-			}
-
-			// // TODO: grab stats from server side to pass to client for better clock discipline
-			// // client and server have different views on RTT and clock offset
-			// MultiplayerPeer *p = get_multiplayer_peer().ptr();
-			// if (p) {
-			// 	ENetMultiplayerPeer *enet_peer = Object::cast_to<ENetMultiplayerPeer>(p);
-			// 	if (enet_peer) {
-			// 		ENetPacketPeer *enet_packet = enet_peer->get_peer(p_peer_id).ptr();
-			// 		if (enet_packet) {
-			// 			enet_packet->get_statistic(ENetPacketPeer::PeerStatistic::PEER_ROUND_TRIP_TIME);
-			// 		}
-			// 	}
-			// }
-
-			// send pong back to the peer
-			send_bytes(out, p_peer_id, MultiplayerPeer::TRANSFER_MODE_UNRELIABLE);
+void RollbackMultiplayer::_process_packet(int p_from, const uint8_t *p_packet, int p_packet_len) {
+	if (p_packet_len > 0) {
+		uint8_t packet_type = p_packet[0] & CMD_MASK;
+		switch (packet_type) {
+			case NETWORK_COMMAND_RAW: {
+				bool is_ping_mask = (p_packet[0] & (CMD_FLAG_PING_PONG_SHIFT)) != 0;
+				if (is_ping_mask && p_packet_len > 1) {
+					bool is_ping = p_packet[1] == COMMAND_PING;
+					if (is_ping) {
+						_process_ping(p_from, &p_packet[2], p_packet_len - 2);
+					} else if (p_packet[1] == COMMAND_PONG) {
+						_process_pong(p_from, &p_packet[2], p_packet_len - 2);
+					}
+					return;
+				}
+			} break;
 		}
 	}
 
-	if (get_unique_id() != 1 && p_peer_id == 1 && p_packet.size() > 1) { // Client side
-		const uint8_t *r = p_packet.ptr();
-		const uint8_t packet_type = r[0];
-		if (packet_type == CUSTOM_COMMAND_PONG) {
-			ERR_FAIL_COND(p_packet.size() != 1 + 4 + 8 + 8);
+	SceneMultiplayer::_process_packet(p_from, p_packet, p_packet_len);
+}
 
-			const uint32_t idx = decode_uint32(&r[1]);
-			const double server_clock = decode_double(&r[1 + 4]); // TODO: Validate server clock, it should be in some boundary
-			const uint64_t server_tick = decode_uint64(&r[1 + 4 + 8]);
+void RollbackMultiplayer::_process_ping(int p_from, const uint8_t *p_packet, int p_packet_len) {
+	ERR_FAIL_COND_MSG(p_packet_len < 4, "Invalid ping packet received. Size too small.");
+	const uint32_t idx = decode_uint32(&p_packet[0]);
 
-			const double pong_received = Network::get_singleton()->_reference_clock_ptr->get_time();
+	double last_rtt = 0;
 
-			if (!awaiting_samples.has(idx)) {
-				return; // packet drop somewhere
-			}
-
-			PingSample sample = awaiting_samples[idx];
-			awaiting_samples.erase(idx);
-
-			sample.ping_received = server_clock;
-			sample.pong_sent = server_clock;
-			sample.pong_received = pong_received;
-
-			if (sample_buffer.size() == 0) {
-				Network::get_singleton()->_reference_clock_ptr->set_time(server_clock);
-				Network::get_singleton()->_simulation_clock_ptr->set_time(Network::get_singleton()->_reference_clock_ptr->get_time());
-				Network::get_singleton()->_network_frames = Network::get_singleton()->_reference_clock_ptr->get_reference_frames();
-				// Network::get_singleton()->_network_frames = server_tick; // TODO: do something here
-			}
-
-			sample_buffer.append(sample);
-			_adjust_clock();
+	Ref<MultiplayerPeer> peer = get_multiplayer_peer();
+	ENetMultiplayerPeer *enet = Object::cast_to<ENetMultiplayerPeer>(peer.ptr());
+	if (enet) {
+		Ref<ENetPacketPeer> peer_packet = enet->get_peer(p_from);
+		if (peer_packet.is_valid() && peer_packet->is_active()) {
+			last_rtt = peer_packet->get_statistic(ENetPacketPeer::PEER_LAST_ROUND_TRIP_TIME);
 		}
 	}
+
+	Vector<uint8_t> packet;
+	packet.resize(24);
+	packet.write[0] = SceneMultiplayer::NETWORK_COMMAND_RAW | CMD_FLAG_PING_PONG_SHIFT;
+	packet.write[1] = COMMAND_PONG;
+
+	{
+		uint8_t *w = &packet.write[2];
+		memcpy(&w[0], &p_packet[0], 4); // copy back the idx
+
+		const double time = Network::get_singleton()->_reference_clock_ptr->get_time();
+		const uint64_t ticks = Network::get_singleton()->_network_frames;
+
+		encode_double(time, &w[4]); // server clock raw
+		encode_uint64(ticks, &w[12]); // server tick
+		encode_half(last_rtt, &w[20]); // Quantized last RTT
+	}
+
+	send_command(p_from, packet.ptr(), packet.size());
+}
+
+void RollbackMultiplayer::_process_pong(int p_from, const uint8_t *p_packet, int p_packet_len) {
+	ERR_FAIL_COND_MSG(p_packet_len < 20, "Invalid pong packet received. Size too small.");
+
+	const uint32_t idx = decode_uint32(&p_packet[0]);
+
+	if (!awaiting_samples.has(idx)) {
+		return; // packet drop somewhere
+	}
+
+	const double server_clock = decode_double(&p_packet[4]); // TODO: Validate server clock, it should be in some boundary
+	const uint64_t server_tick = decode_uint64(&p_packet[12]);
+	const double last_rtt = p_packet_len >= 22 ? decode_half(&p_packet[20]) : 0;
+
+	const double pong_received = Network::get_singleton()->_reference_clock_ptr->get_time();
+
+	PingSample sample = awaiting_samples[idx];
+	awaiting_samples.erase(idx);
+
+	sample.ping_received = server_clock;
+	sample.pong_sent = server_clock;
+	sample.pong_received = pong_received;
+
+	if (sample_buffer.size() == 0) {
+		Network::get_singleton()->_reference_clock_ptr->set_time(server_clock);
+		Network::get_singleton()->_simulation_clock_ptr->set_time(Network::get_singleton()->_reference_clock_ptr->get_time());
+		Network::get_singleton()->_network_frames = Network::get_singleton()->_reference_clock_ptr->get_reference_frames();
+		Network::get_singleton()->_network_frames = server_tick; // TODO: do something here
+	}
+
+	sample_buffer.append(sample);
+
+	_adjust_clock();
 }
 
 void RollbackMultiplayer::_adjust_clock() {
@@ -206,18 +211,10 @@ void RollbackMultiplayer::_adjust_clock() {
 
 	if (Math::abs(offset) > panic_threshold) {
 		// Network::get_singleton()->_reference_clock_ptr->adjust(offset);
-
 		awaiting_samples.clear();
 	} else {
 		const double nudge = offset / double(adjust_steps);
-
-		// Network::get_singleton()->_reference_clock_ptr->adjust(nudge);
-	}
-}
-
-void RollbackMultiplayer::_peer_authenticating(int peer_id) {
-	if (peer_id == MultiplayerPeer::TARGET_PEER_SERVER) {
-		//
+		Network::get_singleton()->_reference_clock_ptr->adjust(nudge);
 	}
 }
 
@@ -225,37 +222,32 @@ void RollbackMultiplayer::_bind_methods() {
 }
 
 RollbackMultiplayer::RollbackMultiplayer() {
-	connect(SNAME("peer_packet"), callable_mp(this, &RollbackMultiplayer::_peer_packet));
-
-	connect(SNAME("peer_authenticating"), callable_mp(this, &RollbackMultiplayer::_peer_authenticating));
-	// connect(SNAME("connected_to_server"), callable_mp(this, &RollbackMultiplayer::_connected_to_server));
-	// connect(SNAME("server_disconnected"), callable_mp(this, &RollbackMultiplayer::_server_disconnected));
 }
 
-void RollbackMultiplayer::_update_state() {
-	Ref<MultiplayerPeer> peer = get_multiplayer_peer();
+void RollbackMultiplayer::_update_rollback_state() {
+	Ref<MultiplayerPeer> peer = SceneMultiplayer::get_multiplayer_peer();
 	MultiplayerPeer::ConnectionStatus status = peer.is_valid() ? peer->get_connection_status() : MultiplayerPeer::CONNECTION_DISCONNECTED;
-	// if (last_connection_status != status) {
-	// }
 
 	if (status == MultiplayerPeer::CONNECTION_CONNECTED) {
 		if (peer->get_unique_id() == MultiplayerPeer::TARGET_PEER_SERVER) {
 			// a peer that cannot send data is offline
 			if (peer->get_max_packet_size() == 0 || peer->is_class("OfflineMultiplayerPeer")) {
-				multiplayer_state = STATE_OFFLINE;
+				rollback_state = ROLLBACK_STATE_OFFLINE;
 			} else {
-				multiplayer_state = STATE_SERVER;
+				rollback_state = ROLLBACK_STATE_SERVER;
 			}
 		}
 		// we must check for connected peers here
-		// during authentication phase, we are "connected" but not authenticated we cant's send messages
+		// during authentication phase, we are "connected" but not authenticated, we cant's send messages
 		// "connected_to_server" signal is emitted when we are fully authenticated
-		else if (get_connected_peers().has(MultiplayerPeer::TARGET_PEER_SERVER)) {
-			multiplayer_state = STATE_CLIENT;
+		else if (SceneMultiplayer::get_connected_peers().has(MultiplayerPeer::TARGET_PEER_SERVER)) {
+			rollback_state = ROLLBACK_STATE_CLIENT;
 		} else {
-			multiplayer_state = STATE_OFFLINE; // connected but not authenticated
+			rollback_state = ROLLBACK_STATE_OFFLINE; // connected but not authenticated
 		}
 	} else {
-		multiplayer_state = STATE_OFFLINE;
+		rollback_state = ROLLBACK_STATE_OFFLINE;
 	}
+
+	last_rollback_state = rollback_state;
 }

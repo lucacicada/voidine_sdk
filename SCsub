@@ -6,6 +6,9 @@ Import("env_modules")
 
 module_env = env_modules.Clone()
 
+# Add ENet include path
+module_env.Append(CPPPATH=["#thirdparty/enet/"])
+
 module_env.add_source_files(env.modules_sources, "*.cpp")
 
 if env.editor_build:
