@@ -158,7 +158,8 @@
 		<method name="size" qualifiers="const">
 			<return type="int" />
 			<description>
-
+				The current number of elements stored in the buffer.
+				This value can be lower than capacity, but it can never exceed it.
 			</description>
 		</method>
 		<method name="slice" qualifiers="const">

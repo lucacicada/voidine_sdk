@@ -2,6 +2,7 @@
 #include "network.h"
 #include "network_input.h"
 #include "rollback_multiplayer.h"
+#include "rollback_synchronizer.h"
 
 void RollbackTree::initialize() {
 	SceneTree::initialize();
@@ -46,20 +47,11 @@ void RollbackTree::iteration_prepare() {
 	Network::get_singleton()->_in_rollback = false;
 	Network::get_singleton()->_network_frames++;
 
-	if (Network::get_singleton()->_in_rollback) {
-		return;
-	}
-
-	// buffer all the inputs before each frame
-	// inputs should be collected and stored before the simulation uses them
-	List<Node *> inputs;
-	get_nodes_in_group(SNAME("_network_input"), &inputs);
-
-	for (Node *E : inputs) {
-		NetworkInput *input = Object::cast_to<NetworkInput>(E);
-		if (input && input->is_multiplayer_authority()) { // only buffer on authority
-			input->buffer();
-		}
+	// TODO: should we gather only at the begin of a simulation loop?
+	if (!Network::get_singleton()->_in_rollback) {
+		// gather all the inputs before each frame
+		// inputs should be collected and stored before the simulation uses them
+		_gather_inputs();
 	}
 }
 
@@ -69,17 +61,52 @@ void RollbackTree::iteration_prepare() {
 // after physic sync, in_physics = true
 void RollbackTree::iteration_end() {
 	SceneTree::iteration_end();
+
+	// store the state of all the replicas
+	// this only matter if we have delta input in this frame
+	// if nothing is going on, we don't necessarely have to snapshot
+	// maybe for the future
+	List<Node *> replicas;
+	get_nodes_in_group(SNAME("_network_replica"), &replicas);
+
+	for (Node *E : replicas) {
+		RollbackSynchronizer *replica = Object::cast_to<RollbackSynchronizer>(E);
+		if (replica) {
+			//
+		}
+	}
 }
 
 // after physic loop, in_physics = false
 bool RollbackTree::process(double p_time) {
 	return SceneTree::process(p_time); // process() will poll() multiplayer APIs if "multiplayer_poll" is true
 
+	// TODO: sample inputs here if enabled
+
 	// TODO: here fire a network tick and also rename network tick into something else
 	// network tiks run at independant rate from phyisic
 	// TODO: input buffering should also accour on network ticks, allowing sub-tick inputs
 	// if the network rate is higher that the physic rate, however only non-phisic related
 	// sub-inputs can work this way, so for now, do not buffer on network ticks
+
+	const uint64_t now = OS::get_singleton()->get_ticks_usec();
+	const uint64_t ntick_per_usec = uint64_t(1'000'000) / uint64_t(network_ticks_per_second);
+	if (now - _last_network_tick_usec >= ntick_per_usec) {
+		_last_network_tick_usec = now;
+		// this is a network tick
+	}
+}
+
+void RollbackTree::_gather_inputs() {
+	List<Node *> inputs;
+	get_nodes_in_group(SNAME("_network_input"), &inputs);
+
+	for (Node *E : inputs) {
+		NetworkInput *input = Object::cast_to<NetworkInput>(E);
+		if (input && input->is_multiplayer_authority()) { // only buffer on authority
+			input->buffer();
+		}
+	}
 }
 
 void RollbackTree::_bind_methods() {

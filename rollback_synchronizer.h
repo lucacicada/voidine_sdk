@@ -23,4 +23,6 @@ public:
 
 	void set_root_path(const NodePath &p_path);
 	NodePath get_root_path() const;
+
+	RollbackSynchronizer();
 };

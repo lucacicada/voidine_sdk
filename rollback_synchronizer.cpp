@@ -61,3 +61,7 @@ void RollbackSynchronizer::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "replica_config", PROPERTY_HINT_RESOURCE_TYPE, "RollbackReplicaConfig", PROPERTY_USAGE_NO_EDITOR | PROPERTY_USAGE_EDITOR_INSTANTIATE_OBJECT), "set_replica_config", "get_replica_config");
 }
+
+RollbackSynchronizer::RollbackSynchronizer() {
+	add_to_group(SNAME("_network_replica"));
+}

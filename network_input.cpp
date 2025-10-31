@@ -67,8 +67,9 @@ NetworkInputReplicaConfig *NetworkInput::get_replica_config_ptr() const {
 
 void NetworkInput::buffer() {
 	ERR_FAIL_COND_MSG(replica_config.is_null(), "Inputs buffering is not configured. Set a valid NetworkInputReplicaConfig resource to enable input buffering.");
-	ERR_FAIL_COND_MSG(Network::get_singleton()->is_in_rollback_frame(), "Cannot buffer inputs during a rollback frame.");
-	ERR_FAIL_COND_MSG(input_buffer.size() == 0, "Input buffer has zero size.");
+	ERR_FAIL_COND(input_buffer.size() == 0);
+	// let the dev handle this? is there even a case where we want to buffer during rollback?
+	// ERR_FAIL_COND_MSG(Network::get_singleton()->is_in_rollback_frame(), "Cannot buffer inputs during a rollback frame.");
 
 	GDVIRTUAL_CALL(_gather); // TODO: return if if the call have failed?
 
@@ -78,6 +79,7 @@ void NetworkInput::buffer() {
 	const int32_t idx = tick % input_buffer.size();
 
 	// input_buffer[idx].properties.clear(); // if the config changes we should clear
+	input_buffer[idx].tick = tick;
 
 	TypedArray<NodePath> props = replica_config->get_properties();
 
@@ -86,6 +88,27 @@ void NetworkInput::buffer() {
 		const Variant &v = get_indexed(prop.get_names(), &valid);
 		ERR_CONTINUE_MSG(!valid, vformat("Property '%s' not found.", prop));
 		input_buffer[idx].properties.insert(prop, v);
+	}
+}
+
+void NetworkInput::clear_buffer() {
+	for (InputFrame &frame : input_buffer) {
+		frame.tick = 0;
+		frame.properties.clear();
+	}
+}
+
+void NetworkInput::replay_input(uint64_t p_tick) {
+	ERR_FAIL_COND_MSG(replica_config.is_null(), "Inputs buffering is not configured. Set a valid NetworkInputReplicaConfig resource to enable input buffering.");
+	ERR_FAIL_COND(input_buffer.size() == 0);
+
+	const int32_t idx = p_tick % input_buffer.size();
+	const InputFrame &frame = input_buffer[idx];
+
+	ERR_FAIL_COND_MSG(frame.tick != p_tick, vformat("No input buffered for tick %d.", p_tick));
+
+	for (const KeyValue<NodePath, Variant> &kv : frame.properties) {
+		set_indexed(kv.key.get_names(), kv.value);
 	}
 }
 
