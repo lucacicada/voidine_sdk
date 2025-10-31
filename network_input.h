@@ -23,7 +23,7 @@ protected:
 	static void _bind_methods();
 
 public:
-	GDVIRTUAL0(_buffer);
+	GDVIRTUAL0(_gather); // for compatibility
 
 	void set_replica_config(Ref<NetworkInputReplicaConfig> p_config);
 	Ref<NetworkInputReplicaConfig> get_replica_config();

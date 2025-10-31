@@ -70,13 +70,7 @@ void NetworkInput::buffer() {
 	ERR_FAIL_COND_MSG(Network::get_singleton()->is_in_rollback_frame(), "Cannot buffer inputs during a rollback frame.");
 	ERR_FAIL_COND_MSG(input_buffer.size() == 0, "Input buffer has zero size.");
 
-	// TODO: fail with error message? non-auth inputs are not used by the sim,
-	// but the developer might still want to buffer for debug?
-	if (!is_multiplayer_authority()) {
-		return;
-	}
-
-	GDVIRTUAL_CALL(_buffer); // TODO: return if if the call have failed?
+	GDVIRTUAL_CALL(_gather); // TODO: return if if the call have failed?
 
 	const uint64_t tick = Network::get_singleton()->get_network_frames();
 
