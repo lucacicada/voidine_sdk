@@ -90,7 +90,7 @@ void NetworkInput::buffer() {
 }
 
 void NetworkInput::_bind_methods() {
-	GDVIRTUAL_BIND(_buffer);
+	GDVIRTUAL_BIND(_gather);
 
 	ClassDB::bind_method(D_METHOD("set_replica_config", "config"), &NetworkInput::set_replica_config);
 	ClassDB::bind_method(D_METHOD("get_replica_config"), &NetworkInput::get_replica_config);
