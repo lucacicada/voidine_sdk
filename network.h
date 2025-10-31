@@ -53,7 +53,7 @@ private:
 
 	double time = 0;
 	double last_time = 0;
-	double stretch_factor = 1.0;
+	double time_scale = 1.0;
 	double accumulator = 0;
 	double integral_error = 0; // correct stretch over time
 	int steps = 0; // remeber how many steps we are currently taking
@@ -70,11 +70,11 @@ public:
 		time = p_time;
 		accumulator = p_time;
 	}
-	void set_stretch_factor(double p_stretch_factor) {
-		stretch_factor = p_stretch_factor;
+	void set_step_scale(double p_time_scale) {
+		time_scale = p_time_scale;
 	}
-	double get_stretch_factor() const { // TODO: rename to time_scale/step_scale
-		return stretch_factor;
+	double get_step_scale() const {
+		return time_scale;
 	}
 	void adjust(double p_offset) {
 		time += p_offset;
@@ -87,10 +87,10 @@ public:
 		const double current_step = get_wall_time();
 		const double step_duration = current_step - last_time;
 		last_time = current_step;
-		adjust(step_duration * stretch_factor);
+		adjust(step_duration * time_scale);
 	}
 
-	void stretch_towards(double p_time, double p_step) { // TODO: rename to adjust_towards
+	void adjust_towards(double p_time, double p_step) {
 		const double Kp = 0.1;
 		const double Ki = 0.01;
 
@@ -106,7 +106,7 @@ public:
 		double stretch = 1.0 + Kp * error + Ki * integral_error;
 		stretch = CLAMP(stretch, clock_stretch_min, clock_stretch_max);
 
-		stretch_factor = stretch;
+		time_scale = stretch;
 	}
 
 	int advance(double p_step, int p_max_steps) {
@@ -143,7 +143,7 @@ private:
 		_simulation_clock_ptr->time = 0.0;
 		_simulation_clock_ptr->accumulator = 0.0;
 
-		_simulation_clock_ptr->stretch_factor = 1.0;
+		_simulation_clock_ptr->time_scale = 1.0;
 		_simulation_clock_ptr->integral_error = 0.0;
 		_simulation_clock_ptr->steps = 0;
 
@@ -165,7 +165,8 @@ public:
 	bool is_in_rollback_frame() const { return _in_rollback; }
 
 	// Current network time in frames.
-	uint64_t get_network_frames() const { return _network_frames; }
+	uint64_t get_network_frames() const { return _network_frames; } // TODO: rename, network frames have nothing to do with game ticks
+	uint64_t get_simulation_frames() const { return _network_frames; }
 	uint64_t get_tick() const { return _network_frames; }
 
 	Network();

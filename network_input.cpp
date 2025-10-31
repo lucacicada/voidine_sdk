@@ -1,4 +1,5 @@
 #include "network_input.h"
+#include "network.h"
 
 PackedStringArray NetworkInput::get_configuration_warnings() const {
 	PackedStringArray warnings = Node::get_configuration_warnings();
@@ -64,9 +65,47 @@ NetworkInputReplicaConfig *NetworkInput::get_replica_config_ptr() const {
 	return replica_config.ptr();
 }
 
+void NetworkInput::buffer() {
+	ERR_FAIL_COND_MSG(replica_config.is_null(), "Inputs buffering is not configured. Set a valid NetworkInputReplicaConfig resource to enable input buffering.");
+	ERR_FAIL_COND_MSG(Network::get_singleton()->is_in_rollback_frame(), "Cannot buffer inputs during a rollback frame.");
+	ERR_FAIL_COND_MSG(input_buffer.size() == 0, "Input buffer has zero size.");
+
+	// TODO: fail with error message? non-auth inputs are not used by the sim,
+	// but the developer might still want to buffer for debug?
+	if (!is_multiplayer_authority()) {
+		return;
+	}
+
+	GDVIRTUAL_CALL(_buffer); // TODO: return if if the call have failed?
+
+	const uint64_t tick = Network::get_singleton()->get_network_frames();
+
+	// random insert the frame, dont care about its position in the buffer
+	const int32_t idx = tick % input_buffer.size();
+
+	// input_buffer[idx].properties.clear(); // if the config changes we should clear
+
+	TypedArray<NodePath> props = replica_config->get_properties();
+
+	for (const NodePath &prop : props) {
+		bool valid = false;
+		const Variant &v = get_indexed(prop.get_names(), &valid);
+		ERR_CONTINUE_MSG(!valid, vformat("Property '%s' not found.", prop));
+		input_buffer[idx].properties.insert(prop, v);
+	}
+}
+
 void NetworkInput::_bind_methods() {
+	GDVIRTUAL_BIND(_buffer);
+
 	ClassDB::bind_method(D_METHOD("set_replica_config", "config"), &NetworkInput::set_replica_config);
 	ClassDB::bind_method(D_METHOD("get_replica_config"), &NetworkInput::get_replica_config);
 
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "replica_config", PROPERTY_HINT_RESOURCE_TYPE, "NetworkInputReplicaConfig", PROPERTY_USAGE_NO_EDITOR | PROPERTY_USAGE_EDITOR_INSTANTIATE_OBJECT), "set_replica_config", "get_replica_config");
+}
+
+NetworkInput::NetworkInput() {
+	input_buffer.resize(64);
+
+	add_to_group(SNAME("_network_input"));
 }

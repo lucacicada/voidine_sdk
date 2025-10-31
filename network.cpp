@@ -7,7 +7,7 @@ void ReferenceClock::_bind_methods() {
 
 void SimulationClock::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_time"), &SimulationClock::get_time);
-	ClassDB::bind_method(D_METHOD("get_time_scale"), &SimulationClock::get_stretch_factor);
+	ClassDB::bind_method(D_METHOD("get_time_scale"), &SimulationClock::get_step_scale);
 	ClassDB::bind_method(D_METHOD("get_simulated_frames"), &SimulationClock::get_simulated_frames);
 }
 

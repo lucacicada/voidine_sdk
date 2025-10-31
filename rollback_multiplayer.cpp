@@ -121,6 +121,15 @@ void RollbackMultiplayer::_process_ping(int p_from, const uint8_t *p_packet, int
 		Ref<ENetPacketPeer> peer_packet = enet->get_peer(p_from);
 		if (peer_packet.is_valid() && peer_packet->is_active()) {
 			last_rtt = peer_packet->get_statistic(ENetPacketPeer::PEER_LAST_ROUND_TRIP_TIME);
+
+			// CORRECTION PACKET STATS: send them to erratic clients to help them adjust better
+			// peer_packet->get_statistic(ENetPacketPeer::PEER_ROUND_TRIP_TIME); // Useful for smoothing and predicting network latency trends.
+			// peer_packet->get_statistic(ENetPacketPeer::PEER_ROUND_TRIP_TIME_VARIANCE); // Helps the client understand jitter and how stable the connection is.
+
+			// DIAGNOSTIC ONLY: only send them if diagnostic is enabled
+			// peer_packet->get_statistic(ENetPacketPeer::PEER_PACKET_LOSS); // Helps the client decide if the connection is unreliable.
+			// peer_packet->get_statistic(ENetPacketPeer::PEER_PACKET_LOSS_VARIANCE); // Shows how bursty or stable packet loss is.
+			// peer_packet->get_statistic(ENetPacketPeer::PEER_PACKET_THROTTLE); // Helps the client understand how ENet is adapting to network conditions.
 		}
 	}
 
