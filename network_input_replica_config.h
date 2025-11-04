@@ -22,6 +22,8 @@ private:
 		}
 	};
 
+	// TODO: we rely on the properties list to be unchanged after config
+	// if someone try to change the properties during runtime, bad things will happen
 	List<InputProperty> properties;
 
 protected:

@@ -1,5 +1,6 @@
 #include "rollback_multiplayer.h"
 #include "network.h"
+#include "network_input.h"
 #include "rollback_tree.h"
 
 #include "modules/enet/enet_multiplayer_peer.h"
@@ -19,15 +20,19 @@ void RollbackMultiplayer::set_multiplayer_peer(const Ref<MultiplayerPeer> &p_pee
 }
 
 Error RollbackMultiplayer::object_configuration_add(Object *p_obj, Variant p_config) {
-	if (p_obj == nullptr && p_config.get_type() == Variant::NODE_PATH) {
-		if (SceneTree::get_singleton()->get_multiplayer() == this) {
-			const NodePath tree_root_path = NodePath("/" + SceneTree::get_singleton()->get_root()->get_name());
-			if (p_config == tree_root_path) {
-				// we are getting set to the root tree, start the simulation
-				// TODO: RollbackTree::get_singleton() can be null here, as the SceneTree constructor call this function immediately
-				// RollbackTree::get_singleton()->get_multiplayer(); // if we are the multiplayer, start the simulation
-				// RollbackTree::get_singleton()->time_reset_requested = true;
-			}
+	// if (p_obj == nullptr && p_config.get_type() == Variant::NODE_PATH) {
+	// 	if (SceneTree::get_singleton()->get_multiplayer() == this) {
+	// 		const NodePath tree_root_path = NodePath("/" + SceneTree::get_singleton()->get_root()->get_name());
+	// 		if (p_config == tree_root_path) {
+	// 			// we are getting set to the root tree, start the simulation
+	// 		}
+	// 	}
+	// }
+
+	if (p_obj != nullptr) {
+		NetworkInput *input = Object::cast_to<NetworkInput>(p_obj);
+		if (input) {
+			return input_replication->add_input(input);
 		}
 	}
 
@@ -35,12 +40,19 @@ Error RollbackMultiplayer::object_configuration_add(Object *p_obj, Variant p_con
 }
 
 Error RollbackMultiplayer::object_configuration_remove(Object *p_obj, Variant p_config) {
-	if (p_obj == nullptr && p_config.get_type() == Variant::NODE_PATH) {
-		if (SceneTree::get_singleton()->get_multiplayer() == this) {
-			const NodePath tree_root_path = NodePath("/" + SceneTree::get_singleton()->get_root()->get_name());
-			if (p_config == tree_root_path) {
-				// we are getting removed from the root tree, end the simulation
-			}
+	// if (p_obj == nullptr && p_config.get_type() == Variant::NODE_PATH) {
+	// 	if (SceneTree::get_singleton()->get_multiplayer() == this) {
+	// 		const NodePath tree_root_path = NodePath("/" + SceneTree::get_singleton()->get_root()->get_name());
+	// 		if (p_config == tree_root_path) {
+	// 			// we are getting removed from the root tree, end the simulation
+	// 		}
+	// 	}
+	// }
+
+	if (p_obj != nullptr) {
+		NetworkInput *input = Object::cast_to<NetworkInput>(p_obj);
+		if (input) {
+			return input_replication->remove_input(input);
 		}
 	}
 
@@ -57,6 +69,22 @@ Error RollbackMultiplayer::poll() {
 	if (rollback_state == ROLLBACK_STATE_CLIENT) {
 		if (ping_timer.elapsed()) {
 			err = ping();
+		}
+	}
+
+	if (rollback_state == ROLLBACK_STATE_CLIENT) {
+		uint64_t now_usec = OS::get_singleton()->get_ticks_usec();
+		while (now_usec - last_network_tick_usec >= network_ticks_usec) {
+			last_network_tick_usec = now_usec;
+
+			// this is a network tick, upload inputs on client
+			{
+				// uint64_t current_tick = ...;
+				// for (uint64_t tick = last_sent_input_tick + 1; tick <= current_tick; ++tick) {
+				// 	// submit input for tick
+				// }
+				// last_sent_input_tick = current_tick;
+			}
 		}
 	}
 
@@ -89,12 +117,14 @@ Error RollbackMultiplayer::ping() {
 
 void RollbackMultiplayer::_process_packet(int p_from, const uint8_t *p_packet, int p_packet_len) {
 	if (p_packet_len > 0) {
-		uint8_t packet_type = p_packet[0] & CMD_MASK;
-		switch (packet_type) {
-			case NETWORK_COMMAND_RAW: {
-				bool is_ping_mask = (p_packet[0] & (CMD_FLAG_PING_PONG_SHIFT)) != 0;
+		const uint8_t packet_type = p_packet[0] & CMD_MASK;
+		if (packet_type == NETWORK_COMMAND_RAW) {
+			if ((p_packet[0] & (1 << CMD_FLAG_1_SHIFT)) != 0) {
+				input_replication->process_inputs(p_from, p_packet, p_packet_len);
+			} else {
+				const bool is_ping_mask = (p_packet[0] & (CMD_FLAG_PING_PONG_SHIFT)) != 0;
 				if (is_ping_mask && p_packet_len > 1) {
-					bool is_ping = p_packet[1] == COMMAND_PING;
+					const bool is_ping = p_packet[1] == COMMAND_PING;
 					if (is_ping) {
 						_process_ping(p_from, &p_packet[2], p_packet_len - 2);
 					} else if (p_packet[1] == COMMAND_PONG) {
@@ -102,7 +132,7 @@ void RollbackMultiplayer::_process_packet(int p_from, const uint8_t *p_packet, i
 					}
 					return;
 				}
-			} break;
+			}
 		}
 	}
 
@@ -227,10 +257,25 @@ void RollbackMultiplayer::_adjust_clock() {
 	}
 }
 
+void RollbackMultiplayer::set_network_ticks_per_second(int p_ticks_per_second) {
+	ERR_FAIL_COND_MSG(p_ticks_per_second <= 0, "Network ticks per second must be greater than 0.");
+	// ERR_FAIL_COND_MSG(p_ticks_per_second > 1000, "Network ticks per second must be less than or equal to 1000.");
+	network_ticks_usec = uint64_t(1'000'000 / p_ticks_per_second);
+}
+
+int RollbackMultiplayer::get_network_ticks_per_second() const {
+	return network_ticks_usec == 0 ? 0 : int(1'000'000 / network_ticks_usec);
+}
+
 void RollbackMultiplayer::_bind_methods() {
 }
 
 RollbackMultiplayer::RollbackMultiplayer() {
+	input_replication.instantiate(this);
+}
+
+RollbackMultiplayer::~RollbackMultiplayer() {
+	input_replication.unref();
 }
 
 void RollbackMultiplayer::_update_rollback_state() {

@@ -11,8 +11,10 @@
 #include "rollback_tree.h"
 
 #ifdef TOOLS_ENABLED
+#include "debug/rollback_debugger.h"
 #include "editor/network_input_editor_plugin.h"
-#include "editor/voidine_editor_plugin.h"
+#include "editor/rollback_editor_plugin.h"
+#include "editor/rollback_synchronizer_editor_plugin.h"
 #endif
 
 static Network *_network = nullptr;
@@ -33,8 +35,9 @@ void initialize_voidine_sdk_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(RollbackMultiplayer);
 		GDREGISTER_CLASS(RollbackSynchronizer);
 		GDREGISTER_CLASS(RollbackReplicaConfig);
-		if (GD_IS_CLASS_ENABLED(MultiplayerAPI)) {
+		if constexpr (GD_IS_CLASS_ENABLED(MultiplayerAPI)) {
 			MultiplayerAPI::set_default_interface("RollbackMultiplayer");
+			RollbackDebugger::initialize();
 		}
 
 		// do not edit the default main loop type
@@ -45,15 +48,21 @@ void initialize_voidine_sdk_module(ModuleInitializationLevel p_level) {
 	}
 #ifdef TOOLS_ENABLED
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
+		EditorPlugins::add_by_type<RollbackEditorPlugin>();
 		EditorPlugins::add_by_type<NetworkInputEditorPlugin>();
-		EditorPlugins::add_by_type<VoidineEditorPlugin>();
+		EditorPlugins::add_by_type<RollbackSynchronizerEditorPlugin>();
 	}
 #endif
 }
 
 void uninitialize_voidine_sdk_module(ModuleInitializationLevel p_level) {
+	if constexpr (GD_IS_CLASS_ENABLED(MultiplayerAPI)) {
+		RollbackDebugger::deinitialize();
+	}
+
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
 		// Engine::get_singleton()->remove_singleton("Network");
 		memdelete(_network);
+		_network = nullptr;
 	}
 }

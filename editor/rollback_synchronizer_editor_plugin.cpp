@@ -1,4 +1,4 @@
-#include "voidine_editor_plugin.h"
+#include "rollback_synchronizer_editor_plugin.h"
 
 #include "../rollback_synchronizer.h"
 
@@ -8,15 +8,15 @@
 #include "editor/inspector/editor_inspector.h"
 #include "editor/settings/editor_command_palette.h"
 
-void VoidineEditorPlugin::edit(Object *p_object) {
+void RollbackSynchronizerEditorPlugin::edit(Object *p_object) {
 	rollback_synchronizer_editor->edit(Object::cast_to<RollbackSynchronizer>(p_object));
 }
 
-bool VoidineEditorPlugin::handles(Object *p_object) const {
+bool RollbackSynchronizerEditorPlugin::handles(Object *p_object) const {
 	return p_object->is_class("RollbackSynchronizer");
 }
 
-void VoidineEditorPlugin::make_visible(bool p_visible) {
+void RollbackSynchronizerEditorPlugin::make_visible(bool p_visible) {
 	if (p_visible) {
 		button->show();
 		EditorNode::get_bottom_panel()->make_item_visible(rollback_synchronizer_editor);
@@ -28,7 +28,7 @@ void VoidineEditorPlugin::make_visible(bool p_visible) {
 	}
 }
 
-VoidineEditorPlugin::VoidineEditorPlugin() {
+RollbackSynchronizerEditorPlugin::RollbackSynchronizerEditorPlugin() {
 	rollback_synchronizer_editor = memnew(RollbackSynchronizerEditor);
 
 	button = EditorNode::get_bottom_panel()->add_item(TTRC("Rollback"), rollback_synchronizer_editor, ED_SHORTCUT_AND_COMMAND("bottom_panels/toggle_rollback_bottom_panel", TTRC("Toggle Rollback Bottom Panel")));

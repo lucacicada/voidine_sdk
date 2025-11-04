@@ -5,8 +5,8 @@
 
 class RollbackSynchronizerEditor;
 
-class VoidineEditorPlugin : public EditorPlugin {
-	GDCLASS(VoidineEditorPlugin, EditorPlugin);
+class RollbackSynchronizerEditorPlugin : public EditorPlugin {
+	GDCLASS(RollbackSynchronizerEditorPlugin, EditorPlugin);
 
 private:
 	Button *button = nullptr;
@@ -17,5 +17,5 @@ public:
 	virtual bool handles(Object *p_object) const override;
 	virtual void make_visible(bool p_visible) override;
 
-	VoidineEditorPlugin();
+	RollbackSynchronizerEditorPlugin();
 };

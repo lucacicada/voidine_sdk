@@ -2,66 +2,150 @@
 
 #include "network_input_replica_config.h"
 
+#include "core/object/ref_counted.h"
+#include "scene/main/multiplayer_api.h"
 #include "scene/main/node.h"
 
-// class InputBuffer {
-// private:
-// 	friend class NetworkInput; // NetworkInput has direct access to the buffer
-
-// 	TightLocalVector<InputFrame> buffer;
+// class InputBuffer : public RefCounted {
+// 	GDCLASS(InputBuffer, RefCounted);
 
 // public:
-// 	uint32_t get_capacity() const {
-// 		return buffer.size();
+// 	struct Buffer_InputFrame {
+// 		uint64_t tick = 0;
+// 		HashMap<NodePath, Variant> properties;
+// 	};
+
+// private:
+// 	uint64_t earliest_buffered_tick = 0;
+// 	uint64_t last_buffered_tick = 0;
+
+// 	uint32_t _head = 0;
+// 	uint32_t _size = 0;
+// 	TightLocalVector<Buffer_InputFrame> buffer;
+
+// public:
+// 	uint32_t capacity() const { return buffer.size(); }
+// 	uint32_t size() const { return _size; }
+// 	bool is_empty() const { return _size == 0; }
+
+// 	// buffer[0] -> oldest frame
+// 	// buffer[size() - 1] -> newest frame
+// 	Buffer_InputFrame &operator[](uint32_t idx) {
+// 		const uint32_t capacity = buffer.size();
+// 		uint32_t real_idx = (_head + capacity - _size + idx) % capacity;
+// 		return buffer[real_idx];
 // 	}
 
-// 	void set_capacity(uint32_t p_capacity) {
-// 		ERR_FAIL_COND(p_capacity == 0, "Input buffer capacity must be greater than zero.");
+// 	const Buffer_InputFrame &operator[](uint32_t idx) const {
+// 		const uint32_t capacity = buffer.size();
+// 		uint32_t real_idx = (_head + capacity - _size + idx) % capacity;
+// 		return buffer[real_idx];
+// 	}
+
+// 	bool has_frame(uint64_t p_tick) const {
+// 		return get_frame(p_tick) != nullptr;
+// 	}
+
+// 	void clear() {
+// 		_head = 0;
+// 		_size = 0;
+// 	}
+
+// 	void resize(uint32_t p_capacity) {
+// 		ERR_FAIL_COND_MSG(p_capacity == 0, "Input buffer capacity must be greater than zero.");
+
+// 		if (p_capacity == buffer.size()) {
+// 			return;
+// 		}
+
+// 		earliest_buffered_tick = 0;
+// 		last_buffered_tick = 0;
+// 		_head = 0;
+// 		_size = 0;
 // 		buffer.resize(p_capacity);
 // 	}
 
+// 	void append(const Buffer_InputFrame &p_frame) {
+// 		ERR_FAIL_COND(p_frame.tick <= last_buffered_tick);
+// 		last_buffered_tick = p_frame.tick;
+
+// 		const uint32_t capacity = buffer.size();
+
+// 		buffer[_head].tick = p_frame.tick;
+// 		// buffer[_head].properties.clear(); // unsafe, but faster
+// 		buffer[_head].properties = p_frame.properties;
+
+// 		_head = (_head + 1) % capacity;
+// 		if (_size < capacity) {
+// 			_size++;
+// 		}
+
+// 		if (_size == capacity) {
+// 			uint32_t earliest_idx = _head;
+// 			earliest_buffered_tick = buffer[earliest_idx].tick;
+// 		} else {
+// 			earliest_buffered_tick = buffer[0].tick;
+// 		}
+// 	}
+
+// 	const Buffer_InputFrame *get_frame(uint64_t p_tick) const {
+// 		const uint32_t capacity = buffer.size();
+// 		for (uint32_t i = 0; i < _size; i++) {
+// 			const Buffer_InputFrame &frame = buffer[(_head + capacity - _size + i) % capacity];
+// 			if (frame.tick == p_tick) {
+// 				return &frame;
+// 			}
+// 		}
+
+// 		return nullptr;
+// 	}
+
 // 	InputBuffer() {
-// 		buffer.resize(1); // ensure the buffer is never empty
+// 		resize(1); // ensure the buffer is never empty
 // 	}
 // };
 
 class NetworkInput : public Node {
 	GDCLASS(NetworkInput, Node)
 
-private:
+public:
 	struct InputFrame {
-		double time = 0;
-		double delta = 0;
 		uint64_t tick = 0;
 		HashMap<NodePath, Variant> properties;
 	};
 
+private:
+	uint32_t input_buffer_head = 0;
+	uint32_t input_buffer_size = 0;
+	uint64_t earliest_buffered_tick = 0;
+	uint64_t last_buffered_tick = 0;
+	Vector<InputFrame> input_buffer;
+
+private:
 	Ref<NetworkInputReplicaConfig> replica_config;
-	TightLocalVector<InputFrame> input_buffer;
+
+	void _start();
+	void _stop();
 
 protected:
 	static void _bind_methods();
+	void _notification(int p_what);
 
 public:
 	GDVIRTUAL0(_gather); // for compatibility
 
 	void set_replica_config(Ref<NetworkInputReplicaConfig> p_config);
 	Ref<NetworkInputReplicaConfig> get_replica_config();
-	NetworkInputReplicaConfig *get_replica_config_ptr() const;
 
+	virtual void set_multiplayer_authority(int p_peer_id, bool p_recursive = true) override;
 	PackedStringArray get_configuration_warnings() const override;
 
-	void buffer();
-	void clear_buffer();
-	void replay_input(uint64_t p_tick);
-	bool has_input(uint64_t p_tick) const {
-		if (input_buffer.size() > 0) {
-			const int32_t idx = p_tick % input_buffer.size();
-			return input_buffer[idx].tick == p_tick;
-		} else {
-			return false;
-		}
-	}
+	void gather();
+	void push_frame(InputFrame p_frame);
+	// void replay_input(uint64_t p_tick);
+	// bool has_frame(uint64_t p_tick) const;
+	void get_last_input_frames_asc(uint32_t p_count, Vector<const InputFrame *> &r_frames) const;
 
 	NetworkInput();
+	~NetworkInput();
 };

@@ -23,20 +23,14 @@ private:
 	static const uint32_t TYPE_INT_SIZE = 64;
 	static const uint32_t TYPE_FLOAT_SIZE = 64;
 
-#ifdef REAL_T_IS_DOUBLE // double precision
-	static const uint32_t REAL_T_SIZE = 64; // sizeof(real_t) * 8
-#else
-	static const uint32_t REAL_T_SIZE = 32;
-#endif
-
-	static const uint32_t TYPE_VECTOR2_SIZE = REAL_T_SIZE * 2; // x, y
-	static const uint32_t TYPE_VECTOR2I_SIZE = REAL_T_SIZE * 2; // x, y
-	static const uint32_t TYPE_VECTOR3_SIZE = REAL_T_SIZE * 3; // x, y, z
-	static const uint32_t TYPE_VECTOR3I_SIZE = REAL_T_SIZE * 3; // x, y, z
-	static const uint32_t TYPE_VECTOR4_SIZE = REAL_T_SIZE * 4; // x, y, z, w
-	static const uint32_t TYPE_VECTOR4I_SIZE = REAL_T_SIZE * 4; // x, y, z, w
-	static const uint32_t TYPE_RECT2_SIZE = REAL_T_SIZE * 4; // position.x, position.y, size.x, size.y
-	static const uint32_t TYPE_RECT2I_SIZE = REAL_T_SIZE * 4; // position.x, position.y, size.x, size.y
+	static const uint32_t TYPE_VECTOR2_SIZE = (sizeof(real_t) * 8) * 2; // x, y
+	static const uint32_t TYPE_VECTOR2I_SIZE = (sizeof(real_t) * 8) * 2; // x, y
+	static const uint32_t TYPE_VECTOR3_SIZE = (sizeof(real_t) * 8) * 3; // x, y, z
+	static const uint32_t TYPE_VECTOR3I_SIZE = (sizeof(real_t) * 8) * 3; // x, y, z
+	static const uint32_t TYPE_VECTOR4_SIZE = (sizeof(real_t) * 8) * 4; // x, y, z, w
+	static const uint32_t TYPE_VECTOR4I_SIZE = (sizeof(real_t) * 8) * 4; // x, y, z, w
+	static const uint32_t TYPE_RECT2_SIZE = (sizeof(real_t) * 8) * 4; // position.x, position.y, size.x, size.y
+	static const uint32_t TYPE_RECT2I_SIZE = (sizeof(real_t) * 8) * 4; // position.x, position.y, size.x, size.y
 
 	static int get_type_size_in_bits(Variant::Type p_type) {
 		switch (p_type) {

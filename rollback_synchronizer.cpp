@@ -63,5 +63,4 @@ void RollbackSynchronizer::_bind_methods() {
 }
 
 RollbackSynchronizer::RollbackSynchronizer() {
-	add_to_group(SNAME("_network_replica"));
 }

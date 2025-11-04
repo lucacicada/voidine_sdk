@@ -168,6 +168,7 @@ public:
 	uint64_t get_network_frames() const { return _network_frames; } // TODO: rename, network frames have nothing to do with game ticks
 	uint64_t get_simulation_frames() const { return _network_frames; }
 	uint64_t get_tick() const { return _network_frames; }
+	int get_steps_count() const { return _simulation_clock_ptr->steps; }
 
 	Network();
 	virtual ~Network();

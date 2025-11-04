@@ -16,23 +16,8 @@ private:
 	inline static RollbackTree *singleton = nullptr;
 
 private:
-	bool time_reset_requested = false;
-
 	bool offline_and_sad = false;
 	Vector<RollbackSynchronizer *> synchronizers;
-
-	int network_ticks_per_second = 60;
-	int get_network_ticks_per_second() const {
-		return network_ticks_per_second;
-	}
-
-	// for network send, use the wall clock
-	uint64_t _last_network_tick_usec = 0;
-
-protected:
-	static void _bind_methods();
-
-	void _gather_inputs();
 
 public:
 	static RollbackTree *get_singleton() { return singleton; }
@@ -41,7 +26,6 @@ public:
 	virtual void initialize() override;
 	virtual void iteration_prepare() override;
 	virtual void iteration_end() override;
-	virtual bool process(double p_time) override;
 
 	void add_synchronizer(RollbackSynchronizer *p_synchronizer) {
 		ERR_FAIL_NULL(p_synchronizer);
