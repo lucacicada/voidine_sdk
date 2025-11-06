@@ -6,8 +6,9 @@
 class RollbackMultiplayer;
 class NetworkInput;
 
-class Replica : public RefCounted {
-	GDCLASS(Replica, RefCounted);
+// Interface for replicating input from clients to server
+class InputReplicaInterface : public RefCounted {
+	GDCLASS(InputReplicaInterface, RefCounted);
 
 private:
 	struct InputPropertyCache {
@@ -21,7 +22,7 @@ private:
 	RollbackMultiplayer *multiplayer = nullptr;
 	HashMap<ObjectID, InputConfigCache> inputs;
 
-	Error _send_inputs(const NetworkInput::InputFrame **p_frames, int p_frame_count, const InputConfigCache &p_config);
+	Error _send_inputs(const InputFrame **p_frames, int p_frame_count, const InputConfigCache &p_config);
 
 	Vector<uint8_t> packet_cache;
 	Error _send_raw(const uint8_t *p_buffer, int p_size, int p_peer, bool p_reliable);
@@ -34,7 +35,7 @@ public:
 
 	void gather_inputs();
 
-	Replica(RollbackMultiplayer *p_multiplayer) {
+	InputReplicaInterface(RollbackMultiplayer *p_multiplayer) {
 		multiplayer = p_multiplayer;
 	}
 };

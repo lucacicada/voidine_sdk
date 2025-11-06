@@ -32,7 +32,17 @@ Error RollbackMultiplayer::object_configuration_add(Object *p_obj, Variant p_con
 	if (p_obj != nullptr) {
 		NetworkInput *input = Object::cast_to<NetworkInput>(p_obj);
 		if (input) {
-			return input_replication->add_input(input);
+			if (is_server()) {
+				// on the server track all inputs
+				return input_replication->add_input(input);
+			}
+			if (input->is_multiplayer_authority()) {
+				// on the client, only add inputs that are authoritative (local)
+				return input_replication->add_input(input);
+			}
+			// the error is unused by the engine and is mainly for override purposes
+			// in this case untracked inputs are not an error but intended behavior
+			return OK;
 		}
 	}
 
@@ -265,6 +275,11 @@ void RollbackMultiplayer::set_network_ticks_per_second(int p_ticks_per_second) {
 
 int RollbackMultiplayer::get_network_ticks_per_second() const {
 	return network_ticks_usec == 0 ? 0 : int(1'000'000 / network_ticks_usec);
+}
+
+void RollbackMultiplayer::before_physic_process() {
+	// gather inputs from registered NetworkInput nodes
+	input_replication->gather_inputs();
 }
 
 void RollbackMultiplayer::_bind_methods() {

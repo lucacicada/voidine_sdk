@@ -17,7 +17,7 @@ public:
 	};
 
 private:
-	Ref<Replica> input_replication;
+	Ref<InputReplicaInterface> input_replication;
 
 	struct PingSample {
 		struct PingSampleSorter {
@@ -91,7 +91,7 @@ public:
 	// usefull for rollback systems to avoid triggering rollback while offline
 	virtual bool is_online_server() const;
 
-	virtual void before_physic_process() { input_replication->gather_inputs(); }
+	virtual void before_physic_process();
 	virtual void after_physic_process() {}
 
 	RollbackMultiplayer();

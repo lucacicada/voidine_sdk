@@ -3,13 +3,15 @@
 #include "network_input.h"
 #include "rollback_multiplayer.h"
 
-Error Replica::add_input(NetworkInput *p_input) {
+Error InputReplicaInterface::add_input(NetworkInput *p_input) {
 	ERR_FAIL_COND_V(!p_input, ERR_INVALID_PARAMETER);
 	Ref<NetworkInputReplicaConfig> replica_config = p_input->get_replica_config();
 	ERR_FAIL_COND_V(replica_config.is_null(), ERR_INVALID_PARAMETER);
 	const TypedArray<NodePath> props = replica_config->get_properties();
 	ERR_FAIL_COND_V(props.is_empty(), ERR_INVALID_PARAMETER);
 
+	// take a cache, this is wrong if properties change at runtime
+	// but it save the headache of constantly looking up types
 	InputConfigCache config;
 	for (const NodePath &prop : props) {
 		bool valid = false;
@@ -24,19 +26,19 @@ Error Replica::add_input(NetworkInput *p_input) {
 	return OK;
 }
 
-Error Replica::remove_input(NetworkInput *p_input) {
+Error InputReplicaInterface::remove_input(NetworkInput *p_input) {
 	ERR_FAIL_COND_V(!p_input, ERR_INVALID_PARAMETER);
 	const ObjectID oid = p_input->get_instance_id();
 	inputs.erase(oid);
 	return OK;
 }
 
-void Replica::gather_inputs() {
+void InputReplicaInterface::gather_inputs() {
 	// TODO: sample inputs here if enabled?
 	for (const KeyValue<ObjectID, InputConfigCache> &E : inputs) {
 		const ObjectID &oid = E.key;
 		NetworkInput *input = oid.is_valid() ? ObjectDB::get_instance<NetworkInput>(oid) : nullptr;
-		if (input && input->is_multiplayer_authority()) { // only buffer on authority
+		if (input && input->is_multiplayer_authority()) { // only buffer local authority
 			input->gather();
 		}
 	}
@@ -46,7 +48,7 @@ void Replica::gather_inputs() {
 		return;
 	}
 
-	// there should only be 1 local input
+	// most of the time only 1 local input exists, but there could be more
 	for (const KeyValue<ObjectID, InputConfigCache> &E : inputs) {
 		const ObjectID &oid = E.key;
 		const InputConfigCache &config = E.value;
@@ -56,8 +58,8 @@ void Replica::gather_inputs() {
 			continue;
 		}
 
-		Vector<const NetworkInput::InputFrame *> frames;
-		input->get_last_input_frames_asc(4, frames);
+		Vector<const InputFrame *> frames;
+		input->get_last_input_frames_asc(4, frames); // TODO: configurable?
 		if (frames.is_empty()) {
 			continue;
 		}
@@ -66,27 +68,33 @@ void Replica::gather_inputs() {
 	}
 }
 
-Error Replica::_send_inputs(const NetworkInput::InputFrame **p_frames, int p_frame_count, const InputConfigCache &p_config) {
+Error InputReplicaInterface::_send_inputs(const InputFrame **p_frames, int p_frame_count, const InputConfigCache &p_config) {
 	// pack frame count
 	// for each frame pack
 	// - frame tick
 	// - list of properties
 
+	Vector<Variant> state_vars;
 	Vector<const Variant *> varp;
-	// varp.resize(p_config.properties.size() * p_frame_count);
+	state_vars.resize(p_frame_count * (p_config.properties.size() + 1)); // +1 for tick
+	varp.resize(state_vars.size());
 
-	const Variant frame_count = uint8_t(p_frame_count);
-	// varp.push_back(&frame_count);
-
+	int index = 0;
 	for (int i = 0; i < p_frame_count; i++) {
-		const NetworkInput::InputFrame *frame = p_frames[i];
-		const Variant tick_var = uint64_t(frame->tick);
-		varp.push_back(&tick_var);
+		const InputFrame *frame = p_frames[i];
+
+		state_vars.write[index] = uint64_t(frame->tick);
+		varp.write[index] = &state_vars.write[index];
+		index++;
+
 		for (const InputPropertyCache &prop : p_config.properties) {
 			const Variant *value = frame->properties.getptr(prop.property);
 			ERR_FAIL_COND_V_MSG(value == nullptr, ERR_INVALID_PARAMETER, "Input property missing in input frame.");
 			ERR_FAIL_COND_V_MSG(value->get_type() != prop.type, ERR_INVALID_PARAMETER, "Input property type mismatch.");
-			varp.push_back(value);
+
+			state_vars.write[index] = *value;
+			varp.write[index] = &state_vars.write[index];
+			index++;
 		}
 	}
 
@@ -108,7 +116,7 @@ Error Replica::_send_inputs(const NetworkInput::InputFrame **p_frames, int p_fra
 	return _send_raw(packet_cache.ptr(), (2 + size), 1, false); // send to server
 }
 
-void Replica::process_inputs(int p_from, const uint8_t *p_packet, int p_packet_len) {
+void InputReplicaInterface::process_inputs(int p_from, const uint8_t *p_packet, int p_packet_len) {
 	ERR_FAIL_COND(!multiplayer->is_server());
 
 	ERR_FAIL_COND_MSG(p_from == 1, "Input packets should only come from peers.");
@@ -146,21 +154,22 @@ void Replica::process_inputs(int p_from, const uint8_t *p_packet, int p_packet_l
 
 	// read each frame
 	for (int i = 0; i < frames_count; i++) {
-		NetworkInput::InputFrame frame;
-		const int64_t base_idx = i * prop_size;
+		InputFrame frame;
+		const int64_t base_idx = i * (prop_size + 1);
 		ERR_FAIL_UNSIGNED_INDEX(base_idx, vars.size());
 		frame.tick = uint64_t(vars[base_idx]);
+		ERR_FAIL_COND_MSG(frame.tick == 0, "Received input frame with invalid tick 0.");
 		for (int j = 0; j < prop_size; j++) {
 			const InputPropertyCache &prop = config->properties[j];
 			const int64_t prop_idx = base_idx + 1 + j;
 			ERR_FAIL_UNSIGNED_INDEX(prop_idx, vars.size());
 			frame.properties.insert(prop.property, vars[prop_idx]);
 		}
-		// input->push_frame(frame);
+		input->push_frame(frame);
 	}
 }
 
-Error Replica::_send_raw(const uint8_t *p_buffer, int p_size, int p_peer, bool p_reliable) {
+Error InputReplicaInterface::_send_raw(const uint8_t *p_buffer, int p_size, int p_peer, bool p_reliable) {
 	ERR_FAIL_COND_V(!p_buffer || p_size < 1, ERR_INVALID_PARAMETER);
 
 	Ref<MultiplayerPeer> peer = multiplayer->get_multiplayer_peer();
