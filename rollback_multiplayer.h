@@ -67,11 +67,6 @@ private:
 	void _process_ping(int p_peer_id, const uint8_t *p_packet, int p_packet_len);
 	void _process_pong(int p_peer_id, const uint8_t *p_packet, int p_packet_len);
 
-	uint64_t network_ticks_usec = 1'000'000 / 30; // default to 30 ticks per second
-	uint64_t last_network_tick_usec = 0;
-	void set_network_ticks_per_second(int p_ticks_per_second);
-	int get_network_ticks_per_second() const;
-
 protected:
 	static void _bind_methods();
 
@@ -87,7 +82,7 @@ public:
 	virtual Error object_configuration_add(Object *p_obj, Variant p_config) override;
 	virtual Error object_configuration_remove(Object *p_obj, Variant p_config) override;
 
-	// check if its a server online (not a OfflineMultiplayerPeer)
+	// check if it's a server online (not a OfflineMultiplayerPeer)
 	// usefull for rollback systems to avoid triggering rollback while offline
 	virtual bool is_online_server() const;
 

@@ -1,12 +1,6 @@
 #include "network_input.h"
 #include "network.h"
 
-void InputBuffer::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("capacity"), &InputBuffer::capacity);
-	ClassDB::bind_method(D_METHOD("size"), &InputBuffer::size);
-	ClassDB::bind_method(D_METHOD("is_empty"), &InputBuffer::is_empty);
-}
-
 PackedStringArray NetworkInput::get_configuration_warnings() const {
 	PackedStringArray warnings = Node::get_configuration_warnings();
 
@@ -59,7 +53,8 @@ PackedStringArray NetworkInput::get_configuration_warnings() const {
 
 void NetworkInput::set_replica_config(Ref<NetworkInputReplicaConfig> p_config) {
 	replica_config = p_config;
-	buffer_clear();
+
+	buffer->clear();
 	update_configuration_warnings();
 }
 
@@ -80,53 +75,32 @@ void NetworkInput::set_multiplayer_authority(int p_peer_id, bool p_recursive) {
 void NetworkInput::gather() {
 	ERR_FAIL_COND_MSG(replica_config.is_null(), "Inputs buffering is not configured. Set a valid NetworkInputReplicaConfig resource to enable input buffering.");
 
-	// let the dev handle this? is there even a case where we want to buffer during rollback?
-	// ERR_FAIL_COND_MSG(Network::get_singleton()->is_in_rollback_frame(), "Cannot buffer inputs during a rollback frame.");
-
-	const uint64_t tick = Network::get_singleton()->get_network_frames();
-	ERR_FAIL_COND_MSG(tick <= last_buffered_tick, vformat("Cannot buffer old tick %d, last is %d.", tick, last_buffered_tick));
-	last_buffered_tick = tick;
-
 	GDVIRTUAL_CALL(_gather); // TODO: return if if the call have failed?
-
-	input_buffer.write[input_buffer_head].tick = tick;
-	// input_buffer[input_buffer_head].properties.clear(); // TODO: if the config changes we should clear
 
 	const TypedArray<NodePath> props = replica_config->get_properties();
 
-	for (const NodePath &prop : props) {
-		bool valid = false;
-		const Variant &v = get_indexed(prop.get_names(), &valid);
-		ERR_CONTINUE_MSG(!valid, vformat("Property '%s' not found.", prop));
-		input_buffer.write[input_buffer_head].properties.insert(prop, v);
-	}
-
-	input_buffer_head = (input_buffer_head + 1) % input_buffer.size();
-	if (input_buffer_size < input_buffer.size()) {
-		input_buffer_size++;
-	}
-
-	if (input_buffer_size == input_buffer.size()) {
-		earliest_buffered_tick = input_buffer[input_buffer_head].tick;
-	} else {
-		earliest_buffered_tick = input_buffer[0].tick;
-	}
-
 	InputFrame frame;
-	frame.tick = tick;
+	frame.frame_id = buffer->next_frame_id();
+
 	for (const NodePath &prop : props) {
 		bool valid = false;
 		const Variant &v = get_indexed(prop.get_names(), &valid);
 		ERR_CONTINUE_MSG(!valid, vformat("Property '%s' not found.", prop));
-		frame.properties.insert(prop, v);
+		frame.set_property(prop, v);
 	}
+
 	buffer->append(frame);
+
+	if (input_buffer.space_left() == 0) {
+		input_buffer.advance_read(1); // buffer full, advance read pointer to overwrite oldest
+	}
+	input_buffer.write(frame);
 }
 
 void NetworkInput::get_last_input_frames_asc(uint32_t p_count, Vector<const InputFrame *> &r_frames) const {
 	ERR_FAIL_COND_MSG(replica_config.is_null(), "Inputs buffering is not configured. Set a valid NetworkInputReplicaConfig resource to enable input buffering.");
 
-	p_count = MIN(p_count, input_buffer_size);
+	p_count = MIN(p_count, buffer->size());
 
 	if (p_count == 0) {
 		return;
@@ -134,39 +108,39 @@ void NetworkInput::get_last_input_frames_asc(uint32_t p_count, Vector<const Inpu
 
 	r_frames.resize(p_count);
 
-	const uint32_t capacity = input_buffer.size();
-
 	for (uint32_t i = 0; i < p_count; i++) {
-		const int32_t idx = (input_buffer_head + capacity - p_count + i) % capacity;
-		r_frames.write[i] = &input_buffer[idx];
+		r_frames.write[i] = &buffer->operator[](buffer->size() - p_count + i);
 	}
 }
 
-void NetworkInput::push_frame(InputFrame p_frame) {
-	ERR_FAIL_COND_MSG(p_frame.tick <= last_buffered_tick, vformat("Cannot push tick %d, last is %d.", p_frame.tick, last_buffered_tick));
-	last_buffered_tick = p_frame.tick;
+int NetworkInput::copy_input_buffer(InputFrame *p_buf, int p_count) const {
+	p_count = MIN(p_count, input_buffer.data_left());
+	return input_buffer.copy(p_buf, input_buffer.data_left() - p_count, p_count);
+}
 
-	// append to the input buffer
-	input_buffer.write[input_buffer_head] = p_frame;
-	input_buffer_head = (input_buffer_head + 1) % input_buffer.size();
-	if (input_buffer_size < input_buffer.size()) {
-		input_buffer_size++;
-	}
+void NetworkInput::_bind_methods() {
+	GDVIRTUAL_BIND(_gather);
 
-	const TypedArray<NodePath> props = replica_config->get_properties();
+	ClassDB::bind_method(D_METHOD("set_replica_config", "config"), &NetworkInput::set_replica_config);
+	ClassDB::bind_method(D_METHOD("get_replica_config"), &NetworkInput::get_replica_config);
 
-	for (const NodePath &prop : props) {
-		ERR_CONTINUE_MSG(!p_frame.properties.has(prop), vformat("Remote input frame is missing property '%s'.", prop));
-		set_indexed(prop.get_names(), p_frame.properties.get(prop));
-	}
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "replica_config", PROPERTY_HINT_RESOURCE_TYPE, "NetworkInputReplicaConfig", PROPERTY_USAGE_NO_EDITOR | PROPERTY_USAGE_EDITOR_INSTANTIATE_OBJECT), "set_replica_config", "get_replica_config");
+}
 
-	if (input_buffer_size == input_buffer.size()) {
-		earliest_buffered_tick = input_buffer[input_buffer_head].tick;
-	} else {
-		earliest_buffered_tick = input_buffer[0].tick;
-	}
+NetworkInput::NetworkInput() {
+	buffer.instantiate();
+	buffer->resize(64); // 1+ sec of buffer time
 
-	emit_signal(SNAME("replayed"));
+	input_buffer.resize(6); // 2^6 = 64 frames
+}
+
+NetworkInput::~NetworkInput() {
+	buffer.unref();
+}
+
+void NetworkInput::reset() {
+	buffer->clear();
+	input_buffer.clear();
 }
 
 void NetworkInput::_start() {
@@ -175,6 +149,7 @@ void NetworkInput::_start() {
 		return;
 	}
 #endif
+	reset();
 	get_multiplayer()->object_configuration_add(this, Variant());
 }
 
@@ -185,6 +160,7 @@ void NetworkInput::_stop() {
 	}
 #endif
 	get_multiplayer()->object_configuration_remove(this, Variant());
+	reset();
 }
 
 void NetworkInput::_notification(int p_what) {
@@ -202,59 +178,4 @@ void NetworkInput::_notification(int p_what) {
 			_stop();
 		} break;
 	}
-}
-
-int NetworkInput::get_buffer_frame_tick(int p_index) {
-	ERR_FAIL_INDEX_V(p_index, int(input_buffer_size), -1);
-	const uint32_t capacity = input_buffer.size();
-	const int32_t idx = (input_buffer_head + capacity - input_buffer_size + p_index) % capacity;
-	return input_buffer[idx].tick;
-}
-
-Variant NetworkInput::get_buffer_frame_value(int p_index, const NodePath &p_property) {
-	ERR_FAIL_INDEX_V(p_index, int(input_buffer_size), Variant());
-	const uint32_t capacity = input_buffer.size();
-	const int32_t idx = (input_buffer_head + capacity - input_buffer_size + p_index) % capacity;
-	ERR_FAIL_COND_V(!input_buffer[idx].properties.has(p_property), Variant());
-	return input_buffer[idx].properties.get(p_property);
-}
-
-void NetworkInput::buffer_clear() {
-	input_buffer_head = 0;
-	input_buffer_size = 0;
-	earliest_buffered_tick = 0;
-	last_buffered_tick = 0;
-	for (int64_t i = 0; i < input_buffer.size(); i++) {
-		input_buffer.write[i] = InputFrame();
-	}
-}
-
-void NetworkInput::_bind_methods() {
-	GDVIRTUAL_BIND(_gather);
-
-	ClassDB::bind_method(D_METHOD("set_replica_config", "config"), &NetworkInput::set_replica_config);
-	ClassDB::bind_method(D_METHOD("get_replica_config"), &NetworkInput::get_replica_config);
-
-	ClassDB::bind_method(D_METHOD("get_buffer_size"), &NetworkInput::get_buffer_size);
-	ClassDB::bind_method(D_METHOD("get_buffer_frame_tick", "index"), &NetworkInput::get_buffer_frame_tick);
-	ClassDB::bind_method(D_METHOD("get_buffer_frame_value", "index", "property"), &NetworkInput::get_buffer_frame_value);
-	ClassDB::bind_method(D_METHOD("get_earliest_buffered_tick"), &NetworkInput::get_earliest_buffered_tick);
-	ClassDB::bind_method(D_METHOD("get_last_buffered_tick"), &NetworkInput::get_last_buffered_tick);
-
-	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "replica_config", PROPERTY_HINT_RESOURCE_TYPE, "NetworkInputReplicaConfig", PROPERTY_USAGE_NO_EDITOR | PROPERTY_USAGE_EDITOR_INSTANTIATE_OBJECT), "set_replica_config", "get_replica_config");
-
-	// signal when the input is restored, give the dev a chance to normalize the input
-	ADD_SIGNAL(MethodInfo("replayed"));
-}
-
-NetworkInput::NetworkInput() {
-	input_buffer.reserve_exact(64);
-	input_buffer.resize(64);
-
-	buffer.instantiate();
-	buffer->resize(64); // 1+ sec of buffer time
-}
-
-NetworkInput::~NetworkInput() {
-	buffer.unref();
 }

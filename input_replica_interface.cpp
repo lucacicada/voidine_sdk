@@ -5,93 +5,101 @@
 
 Error InputReplicaInterface::add_input(NetworkInput *p_input) {
 	ERR_FAIL_COND_V(!p_input, ERR_INVALID_PARAMETER);
-	Ref<NetworkInputReplicaConfig> replica_config = p_input->get_replica_config();
-	ERR_FAIL_COND_V(replica_config.is_null(), ERR_INVALID_PARAMETER);
-	const TypedArray<NodePath> props = replica_config->get_properties();
-	ERR_FAIL_COND_V(props.is_empty(), ERR_INVALID_PARAMETER);
-
-	// take a cache, this is wrong if properties change at runtime
-	// but it save the headache of constantly looking up types
-	InputConfigCache config;
-	for (const NodePath &prop : props) {
-		bool valid = false;
-		const Variant &v = p_input->get_indexed(prop.get_names(), &valid);
-		ERR_FAIL_COND_V(!valid, ERR_INVALID_PARAMETER);
-		const Variant::Type v_type = v.get_type();
-		config.properties.push_back({ prop, v_type });
-	}
-
-	const ObjectID oid = p_input->get_instance_id();
-	inputs.insert(oid, config);
+	inputs.insert(p_input->get_instance_id(), InputState());
 	return OK;
 }
 
 Error InputReplicaInterface::remove_input(NetworkInput *p_input) {
 	ERR_FAIL_COND_V(!p_input, ERR_INVALID_PARAMETER);
-	const ObjectID oid = p_input->get_instance_id();
-	inputs.erase(oid);
+	inputs.erase(p_input->get_instance_id());
 	return OK;
 }
 
-void InputReplicaInterface::gather_inputs() {
+void InputReplicaInterface::process_inputs() {
 	// TODO: sample inputs here if enabled?
-	for (const KeyValue<ObjectID, InputConfigCache> &E : inputs) {
+	for (KeyValue<ObjectID, InputState> &E : inputs) {
 		const ObjectID &oid = E.key;
 		NetworkInput *input = oid.is_valid() ? ObjectDB::get_instance<NetworkInput>(oid) : nullptr;
-		if (input && input->is_multiplayer_authority()) { // only buffer local authority
+		if (!input) {
+			continue;
+		}
+
+		if (input->is_multiplayer_authority()) { // only gather local authority
 			input->gather();
+		} else if (multiplayer->is_server()) {
+			RingBuffer<InputFrame> &buffer = E.value.input_buffer;
+			if (buffer.data_left() > 0) {
+				InputFrame frame = buffer.read();
+
+				Ref<NetworkInputReplicaConfig> replica_config = input->get_replica_config();
+				if (replica_config.is_null()) {
+					continue;
+				}
+				const TypedArray<NodePath> props = replica_config->get_properties();
+				for (const NodePath &prop : props) {
+					if (!frame.properties.has(prop)) {
+						continue;
+					}
+					const Variant &value = frame.properties[prop];
+					input->set_indexed(prop.get_names(), value);
+				}
+			}
 		}
 	}
 
 	// only the client can send
-	if (multiplayer->get_rollback_state() != RollbackMultiplayer::ROLLBACK_STATE_CLIENT) {
-		return;
-	}
-
-	// most of the time only 1 local input exists, but there could be more
-	for (const KeyValue<ObjectID, InputConfigCache> &E : inputs) {
-		const ObjectID &oid = E.key;
-		const InputConfigCache &config = E.value;
-
-		NetworkInput *input = oid.is_valid() ? ObjectDB::get_instance<NetworkInput>(oid) : nullptr;
-		if (!input || !input->is_multiplayer_authority()) { // only submit my own inputs
-			continue;
-		}
-
-		Vector<const InputFrame *> frames;
-		input->get_last_input_frames_asc(4, frames); // TODO: configurable?
-		if (frames.is_empty()) {
-			continue;
-		}
-
-		_send_inputs(frames.ptrw(), frames.size(), config);
+	if (multiplayer->get_rollback_state() == RollbackMultiplayer::ROLLBACK_STATE_CLIENT) {
+		_send_local_inputs();
 	}
 }
 
-Error InputReplicaInterface::_send_inputs(const InputFrame **p_frames, int p_frame_count, const InputConfigCache &p_config) {
-	// pack frame count
-	// for each frame pack
-	// - frame tick
-	// - list of properties
+Error InputReplicaInterface::_send_local_inputs() {
+	NetworkInput *input = nullptr;
+	for (const KeyValue<ObjectID, InputState> &E : inputs) {
+		const ObjectID &oid = E.key;
+		NetworkInput *i = oid.is_valid() ? ObjectDB::get_instance<NetworkInput>(oid) : nullptr;
+		if (i && i->is_multiplayer_authority()) {
+			input = i;
+			break; // HACK: only send the first input we find, ideally multiple inputs should be supported
+		}
+	}
+
+	if (!input) {
+		return OK; // nothing to send
+	}
+
+	Ref<NetworkInputReplicaConfig> replica_config = input->get_replica_config();
+	if (replica_config.is_null()) {
+		return OK; // nothing to send
+	}
+
+	const TypedArray<NodePath> props = replica_config->get_properties();
+	if (props.is_empty()) {
+		return OK; // nothing to send
+	}
+
+	Vector<const InputFrame *> frames;
+	input->get_last_input_frames_asc(4, frames); // TODO: configurable?
+	if (frames.is_empty()) {
+		return OK; // nothing to send
+	}
 
 	Vector<Variant> state_vars;
 	Vector<const Variant *> varp;
-	state_vars.resize(p_frame_count * (p_config.properties.size() + 1)); // +1 for tick
+	state_vars.resize(frames.size() * (props.size() + 1)); // +1 for tick
 	varp.resize(state_vars.size());
 
 	int index = 0;
-	for (int i = 0; i < p_frame_count; i++) {
-		const InputFrame *frame = p_frames[i];
+	for (int i = 0; i < frames.size(); i++) {
+		const InputFrame *frame = frames[i];
 
-		state_vars.write[index] = uint64_t(frame->tick);
+		state_vars.write[index] = uint64_t(frame->frame_id);
 		varp.write[index] = &state_vars.write[index];
 		index++;
 
-		for (const InputPropertyCache &prop : p_config.properties) {
-			const Variant *value = frame->properties.getptr(prop.property);
+		for (const NodePath &prop : props) {
+			const Variant *value = frame->properties.getptr(prop);
 			ERR_FAIL_COND_V_MSG(value == nullptr, ERR_INVALID_PARAMETER, "Input property missing in input frame.");
-			ERR_FAIL_COND_V_MSG(value->get_type() != prop.type, ERR_INVALID_PARAMETER, "Input property type mismatch.");
-
 			state_vars.write[index] = *value;
 			varp.write[index] = &state_vars.write[index];
 			index++;
@@ -102,21 +110,19 @@ Error InputReplicaInterface::_send_inputs(const InputFrame **p_frames, int p_fra
 	Error err = MultiplayerAPI::encode_and_compress_variants(varp.ptrw(), varp.size(), nullptr, size);
 	ERR_FAIL_COND_V_MSG(err != OK, err, "Unable to encode input buffer.");
 
-	// TODO: report("Encoded input packet size: " + itos(size) + ":" + itos(varp.size()) + " variants.");
-
 	if (packet_cache.size() < 2 + size) {
 		packet_cache.resize(2 + size);
 	}
 
 	uint8_t *ptr = packet_cache.ptrw();
 	ptr[0] = SceneMultiplayer::NETWORK_COMMAND_RAW | 1 << SceneMultiplayer::CMD_FLAG_1_SHIFT;
-	ptr[1] = uint8_t(p_frame_count);
+	ptr[1] = uint8_t(frames.size());
 	MultiplayerAPI::encode_and_compress_variants(varp.ptrw(), varp.size(), &ptr[2], size);
 
 	return _send_raw(packet_cache.ptr(), (2 + size), 1, false); // send to server
 }
 
-void InputReplicaInterface::process_inputs(int p_from, const uint8_t *p_packet, int p_packet_len) {
+void InputReplicaInterface::_process_inputs(int p_from, const uint8_t *p_packet, int p_packet_len) {
 	ERR_FAIL_COND(!multiplayer->is_server());
 
 	ERR_FAIL_COND_MSG(p_from == 1, "Input packets should only come from peers.");
@@ -124,25 +130,32 @@ void InputReplicaInterface::process_inputs(int p_from, const uint8_t *p_packet, 
 
 	const uint8_t frames_count = p_packet[1];
 	ERR_FAIL_COND_MSG(frames_count == 0, "Input packet contains zero frames.");
-
-	// count the expected number of vars
+	ERR_FAIL_COND_MSG(frames_count > 64, "Input packet contains too many frames.");
 
 	// find the input owner
 	NetworkInput *input = nullptr;
-	InputConfigCache *config = nullptr;
-	for (const KeyValue<ObjectID, InputConfigCache> &E : inputs) {
+	InputState *input_state = nullptr;
+	for (const KeyValue<ObjectID, InputState> &E : inputs) {
 		input = E.key.is_valid() ? ObjectDB::get_instance<NetworkInput>(E.key) : nullptr;
 		if (input && input->get_multiplayer_authority() == p_from) {
-			config = &inputs[E.key];
+			input = input;
+			input_state = &inputs[E.key];
 			break;
 		}
 	}
 
-	ERR_FAIL_COND_MSG(!input || !config, "Received input packet from unknown peer.");
-	const int64_t prop_size = config->properties.size();
-	int varc = frames_count * (prop_size + 1); // first v is tick
+	ERR_FAIL_COND_MSG(!input || !input_state, "Received input packet from unknown peer.");
+	Ref<NetworkInputReplicaConfig> replica_config = input->get_replica_config();
+	ERR_FAIL_COND_MSG(replica_config.is_null(), "Received input from peer with no configured replica.");
+	const TypedArray<NodePath> props = replica_config->get_properties();
+	ERR_FAIL_COND_MSG(props.is_empty(), "Received input from peer with no configured properties.");
 
-	ERR_FAIL_COND(varc <= 0 || varc > 1024); // 1024 hold over 100 props for 8 frames
+	// ERR_FAIL_COND_MSG(input_state->input_buffer.space_left() < frames_count, "Not enough space in input buffer to store received input frames.");
+
+	const int64_t prop_size = props.size();
+	int varc = frames_count * (prop_size + 1); // +1 is tick
+
+	ERR_FAIL_COND_MSG(varc <= 0 || varc > 1024, "Input packet contains too much data"); // 1024 hold over 100 props for 8 frames
 
 	Vector<Variant> vars;
 	vars.resize(varc);
@@ -150,22 +163,32 @@ void InputReplicaInterface::process_inputs(int p_from, const uint8_t *p_packet, 
 	int consumed = 0;
 	Error err = MultiplayerAPI::decode_and_decompress_variants(vars, p_packet + 2, p_packet_len - 2, consumed);
 	ERR_FAIL_COND(err != OK);
-	ERR_FAIL_COND(vars.size() != varc);
+	ERR_FAIL_COND(vars.size() != varc); // should not happen
 
 	// read each frame
 	for (int i = 0; i < frames_count; i++) {
-		InputFrame frame;
+		if (input_state->input_buffer.space_left() == 0) {
+			break; // no more space
+		}
+
 		const int64_t base_idx = i * (prop_size + 1);
-		ERR_FAIL_UNSIGNED_INDEX(base_idx, vars.size());
-		frame.tick = uint64_t(vars[base_idx]);
-		ERR_FAIL_COND_MSG(frame.tick == 0, "Received input frame with invalid tick 0.");
+
+		InputFrame frame;
+		frame.frame_id = uint64_t(vars[base_idx]);
+
+		ERR_FAIL_COND_MSG(frame.frame_id == 0, "Received input frame with invalid tick 0.");
+
+		if (input_state->last_aknownedged_input_id >= frame.frame_id) {
+			continue; // already have this input
+		}
+
 		for (int j = 0; j < prop_size; j++) {
-			const InputPropertyCache &prop = config->properties[j];
 			const int64_t prop_idx = base_idx + 1 + j;
 			ERR_FAIL_UNSIGNED_INDEX(prop_idx, vars.size());
-			frame.properties.insert(prop.property, vars[prop_idx]);
+			ERR_FAIL_INDEX(j, props.size());
+			frame.properties.insert(props[j], vars[prop_idx]);
 		}
-		input->push_frame(frame);
+		input_state->input_buffer.write(frame);
 	}
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/object/ref_counted.h"
+#include "core/templates/local_vector.h"
 #include "network_input.h"
 
 class RollbackMultiplayer;
@@ -11,29 +12,25 @@ class InputReplicaInterface : public RefCounted {
 	GDCLASS(InputReplicaInterface, RefCounted);
 
 private:
-	struct InputPropertyCache {
-		NodePath property;
-		Variant::Type type;
-	};
-	struct InputConfigCache {
-		Vector<InputPropertyCache> properties;
+	struct InputState {
+		uint64_t last_aknownedged_input_id = 0;
+		RingBuffer<InputFrame> input_buffer{ 8 };
 	};
 
+	HashMap<ObjectID, InputState> inputs;
 	RollbackMultiplayer *multiplayer = nullptr;
-	HashMap<ObjectID, InputConfigCache> inputs;
 
-	Error _send_inputs(const InputFrame **p_frames, int p_frame_count, const InputConfigCache &p_config);
+	Error _send_local_inputs();
 
 	Vector<uint8_t> packet_cache;
 	Error _send_raw(const uint8_t *p_buffer, int p_size, int p_peer, bool p_reliable);
+	void _process_inputs(int p_from, const uint8_t *p_packet, int p_packet_len);
 
 public:
-	void process_inputs(int p_from, const uint8_t *p_packet, int p_packet_len);
-
 	Error add_input(NetworkInput *p_input);
 	Error remove_input(NetworkInput *p_input);
 
-	void gather_inputs();
+	void process_inputs();
 
 	InputReplicaInterface(RollbackMultiplayer *p_multiplayer) {
 		multiplayer = p_multiplayer;

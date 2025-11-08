@@ -11,28 +11,25 @@
 // the ring buffer is also wrong as we might have predicted/simuated input that will be overwritten
 // by the replica once authoritative data is received
 
-struct InputFrame {
-	enum {
-		FLAG_SIMULATED = 1 << 0,
-		FLAG_PREDICTED = 1 << 1,
-	};
-
-	uint32_t flags = 0;
-	uint64_t tick = 0; // 0 indicate this frame is uninitialized
+class InputFrame {
+public:
+	uint64_t frame_id = 0; // 0 means uninitialized
 	HashMap<NodePath, Variant> properties;
 
-	bool is_simulated() {
-		return flags & FLAG_SIMULATED;
+public:
+	uint64_t get_frame_id() const {
+		return frame_id;
 	}
-	bool is_predicted() {
-		return flags & FLAG_PREDICTED;
+	void set_frame_id(uint64_t p_frame_id) {
+		frame_id = p_frame_id;
 	}
 
-	uint64_t get_tick() const {
-		return tick;
-	}
 	HashMap<NodePath, Variant> get_data() const {
 		return properties;
+	}
+
+	void set_property(const NodePath &p_property, const Variant &p_value) {
+		properties.insert(p_property, p_value);
 	}
 };
 
@@ -40,13 +37,11 @@ class InputBuffer : public RefCounted {
 	GDCLASS(InputBuffer, RefCounted);
 
 private:
-	uint64_t _last_tick = 0;
+	uint64_t _last_frame_id = 0;
 	uint32_t _head = 0;
 	uint32_t _size = 0;
+	uint32_t _read_head = 0;
 	TightLocalVector<InputFrame> buffer;
-
-protected:
-	static void _bind_methods();
 
 public:
 	struct Iterator {
@@ -96,6 +91,7 @@ public:
 	}
 
 	void clear() {
+		_last_frame_id = 0;
 		_head = 0;
 		_size = 0;
 		for (uint32_t i = 0; i < buffer.size(); i++) {
@@ -114,14 +110,15 @@ public:
 		clear(); // clear when resizing
 	}
 
-	void append(const InputFrame &p_frame) {
-		ERR_FAIL_COND_MSG(p_frame.tick == 0, "Input frame tick cannot be zero.");
+	void append(InputFrame &p_frame) {
 		ERR_FAIL_COND_MSG(buffer.size() == 0, "Input buffer capacity is zero, cannot append frame.");
-		ERR_FAIL_COND_MSG(p_frame.tick <= _last_tick, vformat("Cannot append tick %d, last is %d.", p_frame.tick, _last_tick));
-		_last_tick = p_frame.tick;
+		ERR_FAIL_COND_MSG(p_frame.frame_id == 0, "Input frame tick cannot be zero.");
+		ERR_FAIL_COND_MSG(p_frame.frame_id <= _last_frame_id, vformat("Cannot append tick %d, last is %d.", p_frame.frame_id, _last_frame_id));
+
+		_last_frame_id = p_frame.frame_id;
+		buffer[_head] = p_frame;
 
 		const uint32_t capacity = buffer.size();
-		buffer[_head] = p_frame;
 		_head = (_head + 1) % capacity;
 		if (_size < capacity) {
 			_size++;
@@ -132,7 +129,7 @@ public:
 		const uint32_t capacity = buffer.size();
 		for (uint32_t i = 0; i < _size; i++) {
 			const InputFrame &frame = buffer[(_head + capacity - _size + i) % capacity];
-			if (frame.tick == p_tick) {
+			if (frame.frame_id == p_tick) {
 				return &frame;
 			}
 		}
@@ -156,7 +153,7 @@ public:
 			return 0;
 		}
 		const uint32_t capacity = buffer.size();
-		return buffer[(_head + capacity - _size + p_index) % capacity].tick;
+		return buffer[(_head + capacity - _size + p_index) % capacity].frame_id;
 	}
 	HashMap<NodePath, Variant> get_frame_data(uint32_t p_index) const {
 		if (p_index >= _size) {
@@ -165,19 +162,54 @@ public:
 		const uint32_t capacity = buffer.size();
 		return buffer[(_head + capacity - _size + p_index) % capacity].properties;
 	}
+
+	uint64_t next_frame_id() const {
+		return _last_frame_id + 1;
+	}
+	uint64_t get_last_frame_id() const {
+		return _last_frame_id;
+	}
+
+	void set_read_head(uint32_t idx) {
+		_read_head = idx % buffer.size();
+	}
+	uint32_t get_read_head() const {
+		return _read_head;
+	}
+	void advance_read_head() {
+		if (_size == 0) {
+			return;
+		}
+		_read_head = (_read_head + 1) % buffer.size();
+	}
+	const InputFrame &get_read_frame() const {
+		return buffer[_read_head];
+	}
+	void reset_read_head_to_oldest() {
+		const uint32_t capacity = buffer.size();
+		_read_head = (_head + capacity - _size) % capacity;
+	}
+
+	uint32_t unread_count() const {
+		if (_size == 0) {
+			return 0;
+		}
+		const uint32_t capacity = buffer.size();
+		uint32_t newest_idx = (_head + capacity - 1) % capacity;
+		if (_read_head > newest_idx) {
+			return (capacity - _read_head) + (newest_idx + 1);
+		} else {
+			return (newest_idx + 1) - _read_head;
+		}
+	}
 };
 
 class NetworkInput : public Node {
 	GDCLASS(NetworkInput, Node)
 
 private:
-	uint32_t input_buffer_head = 0;
-	uint32_t input_buffer_size = 0;
-	uint64_t earliest_buffered_tick = 0;
-	uint64_t last_buffered_tick = 0;
-	Vector<InputFrame> input_buffer;
+	RingBuffer<InputFrame> input_buffer;
 
-private:
 	Ref<InputBuffer> buffer;
 	Ref<NetworkInputReplicaConfig> replica_config;
 
@@ -187,6 +219,7 @@ private:
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
+	void reset();
 
 public:
 	GDVIRTUAL0(_gather); // for compatibility
@@ -198,17 +231,13 @@ public:
 	PackedStringArray get_configuration_warnings() const override;
 
 	void gather();
-	void push_frame(InputFrame p_frame);
-	// void replay_input(uint64_t p_tick);
-	// bool has_frame(uint64_t p_tick) const;
 	void get_last_input_frames_asc(uint32_t p_count, Vector<const InputFrame *> &r_frames) const;
+	// void replay(uint64_t p_frame_id);
 
-	int get_buffer_size() { return input_buffer_size; }
-	int get_buffer_frame_tick(int p_index);
-	Variant get_buffer_frame_value(int p_index, const NodePath &p_property); // get_frame_data
-	int get_earliest_buffered_tick() { return earliest_buffered_tick; }
-	int get_last_buffered_tick() { return last_buffered_tick; }
-	void buffer_clear();
+	Ref<InputBuffer> get_input_buffer() const { return buffer; }
+
+	// RingBuffer<InputFrame> &get_raw_input_buffer() { return input_buffer; }
+	int copy_input_buffer(InputFrame *p_buf, int p_count) const;
 
 	NetworkInput();
 	~NetworkInput();

@@ -31,7 +31,7 @@ Error RollbackMultiplayer::object_configuration_add(Object *p_obj, Variant p_con
 
 	if (p_obj != nullptr) {
 		NetworkInput *input = Object::cast_to<NetworkInput>(p_obj);
-		if (input) {
+		if (input != nullptr) {
 			if (is_server()) {
 				// on the server track all inputs
 				return input_replication->add_input(input);
@@ -61,7 +61,7 @@ Error RollbackMultiplayer::object_configuration_remove(Object *p_obj, Variant p_
 
 	if (p_obj != nullptr) {
 		NetworkInput *input = Object::cast_to<NetworkInput>(p_obj);
-		if (input) {
+		if (input != nullptr) {
 			return input_replication->remove_input(input);
 		}
 	}
@@ -79,22 +79,6 @@ Error RollbackMultiplayer::poll() {
 	if (rollback_state == ROLLBACK_STATE_CLIENT) {
 		if (ping_timer.elapsed()) {
 			err = ping();
-		}
-	}
-
-	if (rollback_state == ROLLBACK_STATE_CLIENT) {
-		uint64_t now_usec = OS::get_singleton()->get_ticks_usec();
-		while (now_usec - last_network_tick_usec >= network_ticks_usec) {
-			last_network_tick_usec = now_usec;
-
-			// this is a network tick, upload inputs on client
-			{
-				// uint64_t current_tick = ...;
-				// for (uint64_t tick = last_sent_input_tick + 1; tick <= current_tick; ++tick) {
-				// 	// submit input for tick
-				// }
-				// last_sent_input_tick = current_tick;
-			}
 		}
 	}
 
@@ -134,6 +118,8 @@ void RollbackMultiplayer::_process_packet(int p_from, const uint8_t *p_packet, i
 			} else {
 				const bool is_ping_mask = (p_packet[0] & (CMD_FLAG_PING_PONG_SHIFT)) != 0;
 				if (is_ping_mask && p_packet_len > 1) {
+					ERR_FAIL_COND_MSG(p_packet_len < 2, "Invalid packet received. Size too small.");
+
 					const bool is_ping = p_packet[1] == COMMAND_PING;
 					if (is_ping) {
 						_process_ping(p_from, &p_packet[2], p_packet_len - 2);
@@ -267,19 +253,9 @@ void RollbackMultiplayer::_adjust_clock() {
 	}
 }
 
-void RollbackMultiplayer::set_network_ticks_per_second(int p_ticks_per_second) {
-	ERR_FAIL_COND_MSG(p_ticks_per_second <= 0, "Network ticks per second must be greater than 0.");
-	// ERR_FAIL_COND_MSG(p_ticks_per_second > 1000, "Network ticks per second must be less than or equal to 1000.");
-	network_ticks_usec = uint64_t(1'000'000 / p_ticks_per_second);
-}
-
-int RollbackMultiplayer::get_network_ticks_per_second() const {
-	return network_ticks_usec == 0 ? 0 : int(1'000'000 / network_ticks_usec);
-}
-
 void RollbackMultiplayer::before_physic_process() {
 	// gather inputs from registered NetworkInput nodes
-	input_replication->gather_inputs();
+	input_replication->process_inputs();
 }
 
 void RollbackMultiplayer::_bind_methods() {
@@ -300,7 +276,7 @@ void RollbackMultiplayer::_update_rollback_state() {
 	if (status == MultiplayerPeer::CONNECTION_CONNECTED) {
 		if (peer->get_unique_id() == MultiplayerPeer::TARGET_PEER_SERVER) {
 			// a peer that cannot send data is offline
-			if (peer->get_max_packet_size() == 0 || peer->is_class("OfflineMultiplayerPeer")) {
+			if (peer->get_max_packet_size() == 0) { // peer->is_class("OfflineMultiplayerPeer")
 				rollback_state = ROLLBACK_STATE_OFFLINE;
 			} else {
 				rollback_state = ROLLBACK_STATE_SERVER;
