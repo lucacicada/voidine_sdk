@@ -54,7 +54,7 @@ PackedStringArray NetworkInput::get_configuration_warnings() const {
 void NetworkInput::set_replica_config(Ref<NetworkInputReplicaConfig> p_config) {
 	replica_config = p_config;
 
-	buffer->clear();
+	input_buffer.clear();
 	update_configuration_warnings();
 }
 
@@ -75,47 +75,68 @@ void NetworkInput::set_multiplayer_authority(int p_peer_id, bool p_recursive) {
 void NetworkInput::gather() {
 	ERR_FAIL_COND_MSG(replica_config.is_null(), "Inputs buffering is not configured. Set a valid NetworkInputReplicaConfig resource to enable input buffering.");
 
-	GDVIRTUAL_CALL(_gather); // TODO: return if if the call have failed?
+	GDVIRTUAL_CALL(_gather); // TODO: return if the call have failed?
 
 	const TypedArray<NodePath> props = replica_config->get_properties();
 
-	InputFrame frame;
-	frame.frame_id = buffer->next_frame_id();
+	InputFrame *frame = memnew(InputFrame);
+	frame->frame_id = ++_last_frame_id;
 
 	for (const NodePath &prop : props) {
 		bool valid = false;
-		const Variant &v = get_indexed(prop.get_names(), &valid);
+		Variant v = get_indexed(prop.get_names(), &valid);
 		ERR_CONTINUE_MSG(!valid, vformat("Property '%s' not found.", prop));
-		frame.set_property(prop, v);
+		frame->properties.insert(prop, v);
 	}
 
-	buffer->append(frame);
+	write_frame(frame);
+}
+
+void NetworkInput::replay() {
+	ERR_FAIL_COND_MSG(replica_config.is_null(), "Inputs buffering is not configured. Set a valid NetworkInputReplicaConfig resource to enable input buffering.");
+	const TypedArray<NodePath> props = replica_config->get_properties();
+
+	if (input_buffer.data_left() == 0) {
+		return; // TODO: replay the oldest
+	}
+
+	InputFrame *frame = input_buffer.read();
+
+	ERR_FAIL_COND(!frame);
+
+	for (const NodePath &prop : props) {
+		HashMap<NodePath, Variant>::ConstIterator E = frame->properties.find(prop);
+		ERR_CONTINUE_MSG(!E, vformat("Property '%s' not found in input frame.", prop));
+		set_indexed(prop.get_names(), E->value);
+	}
+}
+
+void NetworkInput::write_frame(InputFrame *p_frame) {
+	ERR_FAIL_COND(!p_frame);
 
 	if (input_buffer.space_left() == 0) {
-		input_buffer.advance_read(1); // buffer full, advance read pointer to overwrite oldest
+		InputFrame *old = input_buffer.read();
+		if (old) {
+			memdelete(old);
+		}
 	}
-	input_buffer.write(frame);
+
+	input_buffer.write(p_frame);
 }
 
-void NetworkInput::get_last_input_frames_asc(uint32_t p_count, Vector<const InputFrame *> &r_frames) const {
-	ERR_FAIL_COND_MSG(replica_config.is_null(), "Inputs buffering is not configured. Set a valid NetworkInputReplicaConfig resource to enable input buffering.");
-
-	p_count = MIN(p_count, buffer->size());
-
-	if (p_count == 0) {
-		return;
-	}
-
-	r_frames.resize(p_count);
-
-	for (uint32_t i = 0; i < p_count; i++) {
-		r_frames.write[i] = &buffer->operator[](buffer->size() - p_count + i);
-	}
-}
-
-int NetworkInput::copy_input_buffer(InputFrame *p_buf, int p_count) const {
+int NetworkInput::copy_buffer(InputFrame **p_buf, int p_count) const {
 	p_count = MIN(p_count, input_buffer.data_left());
 	return input_buffer.copy(p_buf, input_buffer.data_left() - p_count, p_count);
+}
+
+void NetworkInput::reset() {
+	while (input_buffer.data_left() > 0) {
+		InputFrame *frame = input_buffer.read();
+		if (frame) {
+			memdelete(frame);
+		}
+	}
+	input_buffer.clear();
 }
 
 void NetworkInput::_bind_methods() {
@@ -128,19 +149,11 @@ void NetworkInput::_bind_methods() {
 }
 
 NetworkInput::NetworkInput() {
-	buffer.instantiate();
-	buffer->resize(64); // 1+ sec of buffer time
-
 	input_buffer.resize(6); // 2^6 = 64 frames
 }
 
 NetworkInput::~NetworkInput() {
-	buffer.unref();
-}
-
-void NetworkInput::reset() {
-	buffer->clear();
-	input_buffer.clear();
+	reset();
 }
 
 void NetworkInput::_start() {

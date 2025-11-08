@@ -28,7 +28,6 @@ void initialize_voidine_sdk_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ReferenceClock);
 		GDREGISTER_CLASS(SimulationClock);
 
-		GDREGISTER_CLASS(InputBuffer);
 		GDREGISTER_CLASS(NetworkInput);
 		GDREGISTER_CLASS(NetworkInputReplicaConfig);
 

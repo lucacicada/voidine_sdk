@@ -27,23 +27,7 @@ void InputReplicaInterface::process_inputs() {
 		if (input->is_multiplayer_authority()) { // only gather local authority
 			input->gather();
 		} else if (multiplayer->is_server()) {
-			RingBuffer<InputFrame> &buffer = E.value.input_buffer;
-			if (buffer.data_left() > 0) {
-				InputFrame frame = buffer.read();
-
-				Ref<NetworkInputReplicaConfig> replica_config = input->get_replica_config();
-				if (replica_config.is_null()) {
-					continue;
-				}
-				const TypedArray<NodePath> props = replica_config->get_properties();
-				for (const NodePath &prop : props) {
-					if (!frame.properties.has(prop)) {
-						continue;
-					}
-					const Variant &value = frame.properties[prop];
-					input->set_indexed(prop.get_names(), value);
-				}
-			}
+			input->replay();
 		}
 	}
 
@@ -78,20 +62,22 @@ Error InputReplicaInterface::_send_local_inputs() {
 		return OK; // nothing to send
 	}
 
-	Vector<const InputFrame *> frames;
-	input->get_last_input_frames_asc(4, frames); // TODO: configurable?
-	if (frames.is_empty()) {
+	Vector<InputFrame *> frames;
+	frames.resize(4);
+	int frame_size = input->copy_buffer(frames.ptrw(), frames.size());
+
+	if (frame_size == 0) {
 		return OK; // nothing to send
 	}
 
 	Vector<Variant> state_vars;
 	Vector<const Variant *> varp;
-	state_vars.resize(frames.size() * (props.size() + 1)); // +1 for tick
+	state_vars.resize(frame_size * (props.size() + 1)); // +1 for tick
 	varp.resize(state_vars.size());
 
 	int index = 0;
-	for (int i = 0; i < frames.size(); i++) {
-		const InputFrame *frame = frames[i];
+	for (int i = 0; i < frame_size; i++) {
+		InputFrame *frame = frames[i];
 
 		state_vars.write[index] = uint64_t(frame->frame_id);
 		varp.write[index] = &state_vars.write[index];
@@ -116,13 +102,13 @@ Error InputReplicaInterface::_send_local_inputs() {
 
 	uint8_t *ptr = packet_cache.ptrw();
 	ptr[0] = SceneMultiplayer::NETWORK_COMMAND_RAW | 1 << SceneMultiplayer::CMD_FLAG_1_SHIFT;
-	ptr[1] = uint8_t(frames.size());
+	ptr[1] = uint8_t(frame_size);
 	MultiplayerAPI::encode_and_compress_variants(varp.ptrw(), varp.size(), &ptr[2], size);
 
 	return _send_raw(packet_cache.ptr(), (2 + size), 1, false); // send to server
 }
 
-void InputReplicaInterface::_process_inputs(int p_from, const uint8_t *p_packet, int p_packet_len) {
+void InputReplicaInterface::process_inputs(int p_from, const uint8_t *p_packet, int p_packet_len) {
 	ERR_FAIL_COND(!multiplayer->is_server());
 
 	ERR_FAIL_COND_MSG(p_from == 1, "Input packets should only come from peers.");
@@ -167,18 +153,13 @@ void InputReplicaInterface::_process_inputs(int p_from, const uint8_t *p_packet,
 
 	// read each frame
 	for (int i = 0; i < frames_count; i++) {
-		if (input_state->input_buffer.space_left() == 0) {
-			break; // no more space
-		}
-
 		const int64_t base_idx = i * (prop_size + 1);
 
-		InputFrame frame;
-		frame.frame_id = uint64_t(vars[base_idx]);
+		InputFrame *frame = memnew(InputFrame);
+		frame->frame_id = uint64_t(vars[base_idx]);
+		ERR_FAIL_COND_MSG(frame->frame_id == 0, "Received input frame with invalid tick 0.");
 
-		ERR_FAIL_COND_MSG(frame.frame_id == 0, "Received input frame with invalid tick 0.");
-
-		if (input_state->last_aknownedged_input_id >= frame.frame_id) {
+		if (input_state->last_aknownedged_input_id >= frame->frame_id) {
 			continue; // already have this input
 		}
 
@@ -186,9 +167,11 @@ void InputReplicaInterface::_process_inputs(int p_from, const uint8_t *p_packet,
 			const int64_t prop_idx = base_idx + 1 + j;
 			ERR_FAIL_UNSIGNED_INDEX(prop_idx, vars.size());
 			ERR_FAIL_INDEX(j, props.size());
-			frame.properties.insert(props[j], vars[prop_idx]);
+			frame->properties.insert(props[j], vars[prop_idx]);
 		}
-		input_state->input_buffer.write(frame);
+
+		input->write_frame(frame);
+		input_state->last_aknownedged_input_id = frame->frame_id;
 	}
 }
 
