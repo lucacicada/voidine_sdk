@@ -53,47 +53,43 @@ Error InputReplicaInterface::_send_local_inputs() {
 	}
 
 	Ref<NetworkInputReplicaConfig> replica_config = input->get_replica_config();
-	if (replica_config.is_null()) {
-		return OK; // nothing to send
-	}
+	ERR_FAIL_COND_V(replica_config.is_null(), ERR_UNCONFIGURED);
 
 	const TypedArray<NodePath> props = replica_config->get_properties();
-	if (props.is_empty()) {
-		return OK; // nothing to send
-	}
+	ERR_FAIL_COND_V(props.is_empty(), ERR_UNCONFIGURED);
 
-	Vector<InputFrame *> frames;
-	frames.resize(4);
-	int frame_size = input->copy_buffer(frames.ptrw(), frames.size());
+	Vector<InputFrame> frames;
+	Error err = input->copy_buffer(frames, 4);
+	ERR_FAIL_COND_V_MSG(err != OK, err, "Unable to copy input buffer.");
 
-	if (frame_size == 0) {
+	if (frames.is_empty()) {
 		return OK; // nothing to send
 	}
 
 	Vector<Variant> state_vars;
 	Vector<const Variant *> varp;
-	state_vars.resize(frame_size * (props.size() + 1)); // +1 for tick
+
+	state_vars.resize(frames.size() * (props.size() + 1)); // +1 for frame_id
 	varp.resize(state_vars.size());
 
-	int index = 0;
-	for (int i = 0; i < frame_size; i++) {
-		InputFrame *frame = frames[i];
+	for (int i = 0; i < frames.size(); i++) {
+		int offset = i * (props.size() + 1);
 
-		state_vars.write[index] = uint64_t(frame->frame_id);
-		varp.write[index] = &state_vars.write[index];
-		index++;
+		const InputFrame &frame = frames[i];
+		state_vars.write[offset] = frame.frame_id;
+		varp.write[offset] = &state_vars[offset];
 
-		for (const NodePath &prop : props) {
-			const Variant *value = frame->properties.getptr(prop);
-			ERR_FAIL_COND_V_MSG(value == nullptr, ERR_INVALID_PARAMETER, "Input property missing in input frame.");
-			state_vars.write[index] = *value;
-			varp.write[index] = &state_vars.write[index];
-			index++;
+		for (int j = 0; j < props.size(); j++) {
+			const NodePath &prop = props[j];
+			ERR_FAIL_COND_V_MSG(!frame.properties.has(prop), ERR_DOES_NOT_EXIST, vformat("Property '%s' not found in input frame.", prop));
+
+			state_vars.write[offset + 1 + j] = frame.properties[prop];
+			varp.write[offset + 1 + j] = &state_vars[offset + 1 + j];
 		}
 	}
 
 	int size;
-	Error err = MultiplayerAPI::encode_and_compress_variants(varp.ptrw(), varp.size(), nullptr, size);
+	err = MultiplayerAPI::encode_and_compress_variants(varp.ptrw(), varp.size(), nullptr, size);
 	ERR_FAIL_COND_V_MSG(err != OK, err, "Unable to encode input buffer.");
 
 	if (packet_cache.size() < 2 + size) {
@@ -102,7 +98,7 @@ Error InputReplicaInterface::_send_local_inputs() {
 
 	uint8_t *ptr = packet_cache.ptrw();
 	ptr[0] = SceneMultiplayer::NETWORK_COMMAND_RAW | 1 << SceneMultiplayer::CMD_FLAG_1_SHIFT;
-	ptr[1] = uint8_t(frame_size);
+	ptr[1] = uint8_t(frames.size());
 	MultiplayerAPI::encode_and_compress_variants(varp.ptrw(), varp.size(), &ptr[2], size);
 
 	return _send_raw(packet_cache.ptr(), (2 + size), 1, false); // send to server
@@ -155,11 +151,11 @@ void InputReplicaInterface::process_inputs(int p_from, const uint8_t *p_packet, 
 	for (int i = 0; i < frames_count; i++) {
 		const int64_t base_idx = i * (prop_size + 1);
 
-		InputFrame *frame = memnew(InputFrame);
-		frame->frame_id = uint64_t(vars[base_idx]);
-		ERR_FAIL_COND_MSG(frame->frame_id == 0, "Received input frame with invalid tick 0.");
+		InputFrame frame;
+		frame.frame_id = uint64_t(vars[base_idx]);
+		ERR_FAIL_COND_MSG(frame.frame_id == 0, "Received input frame with invalid tick 0.");
 
-		if (input_state->last_aknownedged_input_id >= frame->frame_id) {
+		if (input_state->last_aknownedged_input_id >= frame.frame_id) {
 			continue; // already have this input
 		}
 
@@ -167,11 +163,11 @@ void InputReplicaInterface::process_inputs(int p_from, const uint8_t *p_packet, 
 			const int64_t prop_idx = base_idx + 1 + j;
 			ERR_FAIL_UNSIGNED_INDEX(prop_idx, vars.size());
 			ERR_FAIL_INDEX(j, props.size());
-			frame->properties.insert(props[j], vars[prop_idx]);
+			frame.properties.insert(props[j], vars[prop_idx]);
 		}
 
 		input->write_frame(frame);
-		input_state->last_aknownedged_input_id = frame->frame_id;
+		input_state->last_aknownedged_input_id = frame.frame_id;
 	}
 }
 

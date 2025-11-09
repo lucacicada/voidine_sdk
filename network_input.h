@@ -16,7 +16,8 @@ class NetworkInput : public Node {
 
 private:
 	uint64_t _last_frame_id = 0;
-	RingBuffer<InputFrame *> input_buffer;
+	RingBuffer<InputFrame> buffer;
+
 	Ref<NetworkInputReplicaConfig> replica_config;
 
 	void _start();
@@ -28,19 +29,18 @@ protected:
 	void reset();
 
 public:
+	Error copy_buffer(Vector<InputFrame> &frames, int p_count);
+
 	GDVIRTUAL0(_gather); // for compatibility
 
 	void set_replica_config(Ref<NetworkInputReplicaConfig> p_config);
 	Ref<NetworkInputReplicaConfig> get_replica_config();
 
 	virtual void set_multiplayer_authority(int p_peer_id, bool p_recursive = true) override;
-	PackedStringArray get_configuration_warnings() const override;
 
 	void gather();
 	void replay();
-	void write_frame(InputFrame *p_frame);
-	int copy_buffer(InputFrame **p_buf, int p_count) const;
+	void write_frame(const InputFrame &p_frame);
 
 	NetworkInput();
-	~NetworkInput();
 };
