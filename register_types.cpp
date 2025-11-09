@@ -5,8 +5,8 @@
 #include "network_input.h"
 #include "network_input_replica_config.h"
 #include "rollback_multiplayer.h"
-#include "rollback_replica_config.h"
-#include "rollback_synchronizer.h"
+#include "network_replica_config.h"
+#include "network_actor.h"
 #include "rollback_tree.h"
 
 #ifdef TOOLS_ENABLED

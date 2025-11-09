@@ -1,9 +1,9 @@
 #pragma once
 
-#include "rollback_replica_config.h"
+#include "network_replica_config.h"
 #include "scene/main/node.h"
 
-// NetworkEntity, NetworkActor are also decent names
+// NetworkEntity is ok
 // NetworkObject is misleading...
 class NetworkActor : public Node {
 	GDCLASS(NetworkActor, Node)

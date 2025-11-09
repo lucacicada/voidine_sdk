@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../rollback_replica_config.h"
-#include "../rollback_synchronizer.h"
+#include "../network_replica_config.h"
+#include "../network_actor.h"
 
 #include "editor/plugins/editor_plugin.h"
 #include "scene/gui/box_container.h"

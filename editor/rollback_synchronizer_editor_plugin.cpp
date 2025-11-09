@@ -1,6 +1,6 @@
 #include "rollback_synchronizer_editor_plugin.h"
 
-#include "../rollback_synchronizer.h"
+#include "../network_actor.h"
 
 #include "editor/editor_interface.h"
 #include "editor/editor_node.h"

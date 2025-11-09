@@ -2,7 +2,7 @@
 #include "network.h"
 #include "network_input.h"
 #include "rollback_multiplayer.h"
-#include "rollback_synchronizer.h"
+#include "network_actor.h"
 
 void RollbackTree::initialize() {
 	SceneTree::initialize();
