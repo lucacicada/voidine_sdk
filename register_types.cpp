@@ -4,7 +4,6 @@
 #include "network.h"
 #include "network_input.h"
 #include "network_input_replica_config.h"
-#include "network_time.h"
 #include "rollback_multiplayer.h"
 #include "rollback_replica_config.h"
 #include "rollback_synchronizer.h"
@@ -31,10 +30,11 @@ void initialize_voidine_sdk_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(NetworkInput);
 		GDREGISTER_CLASS(NetworkInputReplicaConfig);
 
+		GDREGISTER_CLASS(NetworkActor);
+		GDREGISTER_CLASS(NetworkReplicaConfig);
+
 		GDREGISTER_CLASS(RollbackTree);
 		GDREGISTER_CLASS(RollbackMultiplayer);
-		GDREGISTER_CLASS(RollbackSynchronizer);
-		GDREGISTER_CLASS(RollbackReplicaConfig);
 		if constexpr (GD_IS_CLASS_ENABLED(MultiplayerAPI)) {
 			MultiplayerAPI::set_default_interface("RollbackMultiplayer");
 			RollbackDebugger::initialize();

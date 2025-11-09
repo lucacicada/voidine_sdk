@@ -16,7 +16,7 @@
 #include "scene/gui/separator.h"
 #include "scene/gui/tree.h"
 
-void RollbackSynchronizerEditor::edit(RollbackSynchronizer *p_object) {
+void RollbackSynchronizerEditor::edit(NetworkActor *p_object) {
 	if (current == p_object) {
 		return;
 	}

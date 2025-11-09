@@ -17,7 +17,7 @@ private:
 
 private:
 	bool offline_and_sad = false;
-	Vector<RollbackSynchronizer *> synchronizers;
+	Vector<NetworkActor *> synchronizers;
 
 public:
 	static RollbackTree *get_singleton() { return singleton; }
@@ -27,12 +27,12 @@ public:
 	virtual void iteration_prepare() override;
 	virtual void iteration_end() override;
 
-	void add_synchronizer(RollbackSynchronizer *p_synchronizer) {
+	void add_synchronizer(NetworkActor *p_synchronizer) {
 		ERR_FAIL_NULL(p_synchronizer);
 
 		synchronizers.push_back(p_synchronizer);
 	}
-	void remove_synchronizer(RollbackSynchronizer *p_synchronizer) {
+	void remove_synchronizer(NetworkActor *p_synchronizer) {
 		ERR_FAIL_NULL(p_synchronizer);
 
 		synchronizers.erase(p_synchronizer);

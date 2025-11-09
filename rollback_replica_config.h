@@ -3,10 +3,9 @@
 #include "core/io/resource.h"
 #include "core/variant/typed_array.h"
 
-// ReplicaPropertiesConfig
-class RollbackReplicaConfig : public Resource {
-	GDCLASS(RollbackReplicaConfig, Resource);
-	OBJ_SAVE_TYPE(RollbackReplicaConfig);
+class NetworkReplicaConfig : public Resource {
+	GDCLASS(NetworkReplicaConfig, Resource);
+	OBJ_SAVE_TYPE(NetworkReplicaConfig);
 	RES_BASE_EXTENSION("rrc");
 
 protected:

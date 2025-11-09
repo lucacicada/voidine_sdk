@@ -13,13 +13,13 @@ class Tree;
 class TreeItem;
 class PropertySelector;
 class SceneTreeDialog;
-class RollbackSynchronizer;
+class NetworkActor;
 
 class RollbackSynchronizerEditor : public VBoxContainer {
 	GDCLASS(RollbackSynchronizerEditor, VBoxContainer);
 
 private:
-	RollbackSynchronizer *current = nullptr;
+	NetworkActor *current = nullptr;
 
 	Button *pin = nullptr;
 	// Button *add_pick_button = nullptr;
@@ -36,8 +36,8 @@ protected:
 	void _notification(int p_what);
 
 public:
-	void edit(RollbackSynchronizer *p_object);
-	RollbackSynchronizer *get_current() const { return current; }
+	void edit(NetworkActor *p_object);
+	NetworkActor *get_current() const { return current; }
 
 	Button *get_pin() { return pin; }
 	RollbackSynchronizerEditor();

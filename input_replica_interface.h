@@ -28,7 +28,7 @@ public:
 	Error add_input(NetworkInput *p_input);
 	Error remove_input(NetworkInput *p_input);
 
-	void process_inputs();
+	void gather_inputs();
 	void process_inputs(int p_from, const uint8_t *p_packet, int p_packet_len);
 
 	InputReplicaInterface(RollbackMultiplayer *p_multiplayer) {

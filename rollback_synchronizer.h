@@ -3,11 +3,13 @@
 #include "rollback_replica_config.h"
 #include "scene/main/node.h"
 
-class RollbackSynchronizer : public Node {
-	GDCLASS(RollbackSynchronizer, Node)
+// NetworkEntity, NetworkActor are also decent names
+// NetworkObject is misleading...
+class NetworkActor : public Node {
+	GDCLASS(NetworkActor, Node)
 
 private:
-	Ref<RollbackReplicaConfig> replica_config;
+	Ref<NetworkReplicaConfig> replica_config;
 	NodePath root_path = NodePath("..");
 
 protected:
@@ -18,11 +20,11 @@ protected:
 public:
 	PackedStringArray get_configuration_warnings() const override;
 
-	void set_replica_config(Ref<RollbackReplicaConfig> p_config);
-	Ref<RollbackReplicaConfig> get_replica_config() const;
+	void set_replica_config(Ref<NetworkReplicaConfig> p_config);
+	Ref<NetworkReplicaConfig> get_replica_config() const;
 
 	void set_root_path(const NodePath &p_path);
 	NodePath get_root_path() const;
 
-	RollbackSynchronizer();
+	NetworkActor();
 };

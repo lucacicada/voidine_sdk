@@ -15,7 +15,7 @@ Error InputReplicaInterface::remove_input(NetworkInput *p_input) {
 	return OK;
 }
 
-void InputReplicaInterface::process_inputs() {
+void InputReplicaInterface::gather_inputs() {
 	// TODO: sample inputs here if enabled?
 	for (KeyValue<ObjectID, InputState> &E : inputs) {
 		const ObjectID &oid = E.key;
@@ -27,7 +27,7 @@ void InputReplicaInterface::process_inputs() {
 		if (input->is_multiplayer_authority()) { // only gather local authority
 			input->gather();
 		} else if (multiplayer->is_server()) {
-			input->replay();
+			input->replay(); // replay from buffer on server
 		}
 	}
 

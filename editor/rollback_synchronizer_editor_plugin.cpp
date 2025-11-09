@@ -9,7 +9,7 @@
 #include "editor/settings/editor_command_palette.h"
 
 void RollbackSynchronizerEditorPlugin::edit(Object *p_object) {
-	rollback_synchronizer_editor->edit(Object::cast_to<RollbackSynchronizer>(p_object));
+	rollback_synchronizer_editor->edit(Object::cast_to<NetworkActor>(p_object));
 }
 
 bool RollbackSynchronizerEditorPlugin::handles(Object *p_object) const {

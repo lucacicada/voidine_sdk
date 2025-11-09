@@ -13,7 +13,7 @@ class Tree;
 class TreeItem;
 class PropertySelector;
 class SceneTreeDialog;
-class RollbackSynchronizer;
+class NetworkActor;
 
 class NetworkInputEditor : public VBoxContainer {
 	GDCLASS(NetworkInputEditor, VBoxContainer);

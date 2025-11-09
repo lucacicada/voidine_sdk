@@ -29,8 +29,6 @@ protected:
 	void reset();
 
 public:
-	Error copy_buffer(Vector<InputFrame> &frames, int p_count);
-
 	GDVIRTUAL0(_gather); // for compatibility
 
 	void set_replica_config(Ref<NetworkInputReplicaConfig> p_config);
@@ -40,6 +38,8 @@ public:
 
 	void gather();
 	void replay();
+
+	Error copy_buffer(Vector<InputFrame> &frames, int p_count);
 	void write_frame(const InputFrame &p_frame);
 
 	NetworkInput();

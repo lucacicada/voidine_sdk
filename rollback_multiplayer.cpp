@@ -255,7 +255,7 @@ void RollbackMultiplayer::_adjust_clock() {
 
 void RollbackMultiplayer::before_physic_process() {
 	// gather inputs from registered NetworkInput nodes
-	input_replication->process_inputs();
+	input_replication->gather_inputs();
 }
 
 void RollbackMultiplayer::_bind_methods() {
