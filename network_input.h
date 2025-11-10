@@ -19,6 +19,8 @@ private:
 		uint32_t samples = 0;
 		Variant accumulated;
 	};
+
+	// TODO: Use StringName instead of NodePath
 	HashMap<NodePath, InputSample> _samples;
 
 	uint64_t _last_frame_id = 0;
@@ -37,18 +39,20 @@ protected:
 public:
 	GDVIRTUAL0(_gather); // for compatibility
 
+	virtual void set_multiplayer_authority(int p_peer_id, bool p_recursive = true) override;
+
 	void set_replica_config(Ref<NetworkInputReplicaConfig> p_config);
 	Ref<NetworkInputReplicaConfig> get_replica_config();
 
-	virtual void set_multiplayer_authority(int p_peer_id, bool p_recursive = true) override;
+	void sample(const NodePath &p_property, const Variant &p_value);
 
 	void gather();
 	void replay();
 
-	void sample(const NodePath &p_property, const Variant &p_value);
-
 	Error copy_buffer(Vector<InputFrame> &frames, int p_count);
 	void write_frame(const InputFrame &p_frame);
+
+	bool is_input_authority() const;
 
 	NetworkInput();
 };
