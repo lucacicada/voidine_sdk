@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <class name="NetworkInput" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
+		Base class for networked input gathering and buffering.
 	</brief_description>
 	<description>
 	</description>
@@ -12,6 +13,21 @@
 			<description>
 				Called before a tick is executed. Use this function to gather input data for the current frame.
 				During a rollback, the buffered input will be used instead of calling this function.
+			</description>
+		</method>
+		<method name="is_input_authority" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns true if the input can be used.
+			</description>
+		</method>
+		<method name="sample">
+			<return type="void" />
+			<param index="0" name="property" type="NodePath" />
+			<param index="1" name="value" type="Variant" />
+			<description>
+				Collect a sample for the property.
+				The property final value will be the average of all samples collected.
 			</description>
 		</method>
 	</methods>
