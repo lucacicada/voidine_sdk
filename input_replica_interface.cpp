@@ -60,18 +60,6 @@ Error InputReplicaInterface::remove_input(Object *p_obj, Variant p_config) {
 }
 
 void InputReplicaInterface::gather_inputs() {
-	// TODO: sample inputs here if enabled?
-
-	// to sample inputs we must collect them during idle (process) frame
-	// int samples = 0;
-	// _process() {
-	//  _gather();
-	// 	samples++;
-	//  for (prop in props) {
-	//    cached_props[prop] += current_value[prop]
-	//  }
-	// }
-
 	for (KeyValue<ObjectID, InputState> &E : inputs) {
 		const ObjectID &oid = E.key;
 		NetworkInput *input = oid.is_valid() ? ObjectDB::get_instance<NetworkInput>(oid) : nullptr;

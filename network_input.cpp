@@ -32,12 +32,75 @@ void NetworkInput::set_multiplayer_authority(int p_peer_id, bool p_recursive) {
 	_start();
 }
 
+void NetworkInput::sample(const NodePath &p_property, const Variant &p_value) {
+	// ERR_FAIL_COND_MSG(replica_config.is_null(), "Input buffering is not configured. Set a valid NetworkInputReplicaConfig resource to enable input sampling.");
+	// const TypedArray<NodePath> props = replica_config->get_properties();
+	// ERR_FAIL_COND_MSG(!props.has(p_property), vformat("Property '%s' is not registered for replication.", p_property));
+
+	if (!_samples.has(p_property)) {
+		InputSample sample;
+		sample.accumulated = p_value;
+		_samples.insert(p_property, sample);
+	}
+
+	InputSample &sample = _samples[p_property];
+	ERR_FAIL_COND_MSG(sample.accumulated.get_type() != p_value.get_type(),
+			vformat("Type mismatch when sampling property '%s'. Expected type: %s, got: %s.",
+					p_property,
+					Variant::get_type_name(sample.accumulated.get_type()),
+					Variant::get_type_name(p_value.get_type())));
+
+	switch (p_value.get_type()) {
+		case Variant::VECTOR2:
+		case Variant::VECTOR3:
+		case Variant::VECTOR4:
+		case Variant::VECTOR2I:
+		case Variant::VECTOR3I:
+		case Variant::VECTOR4I:
+		case Variant::INT:
+		case Variant::FLOAT: {
+			sample.accumulated = Variant::evaluate(Variant::OP_ADD, sample.accumulated, p_value);
+			sample.samples++;
+		} break;
+		default: {
+			sample.accumulated = p_value;
+			sample.samples = 1;
+		} break;
+	}
+}
+
 void NetworkInput::gather() {
 	ERR_FAIL_COND_MSG(replica_config.is_null(), "Input buffering is not configured. Set a valid NetworkInputReplicaConfig resource to enable input buffering.");
+	const TypedArray<NodePath> props = replica_config->get_properties();
+
+	for (const KeyValue<NodePath, InputSample> &E : _samples) {
+		const NodePath &prop = E.key;
+		const InputSample &sample = E.value;
+
+		Variant averaged_value = sample.accumulated;
+
+		if (sample.samples > 1) {
+			switch (averaged_value.get_type()) {
+				case Variant::VECTOR2:
+				case Variant::VECTOR3:
+				case Variant::VECTOR4:
+				case Variant::VECTOR2I:
+				case Variant::VECTOR3I:
+				case Variant::VECTOR4I:
+				case Variant::INT:
+				case Variant::FLOAT: {
+					averaged_value = Variant::evaluate(Variant::OP_DIVIDE, averaged_value, Variant(sample.samples));
+				} break;
+			}
+		}
+
+		ERR_FAIL_COND_MSG(!props.has(prop), vformat("Property '%s' is not registered for replication.", prop));
+		set_indexed(prop.get_names(), averaged_value);
+	}
+
+	_samples.clear();
 
 	GDVIRTUAL_CALL(_gather); // TODO: return if the call have failed?
-
-	const TypedArray<NodePath> props = replica_config->get_properties();
 
 	InputFrame frame;
 	frame.frame_id = ++_last_frame_id;
@@ -78,6 +141,7 @@ void NetworkInput::write_frame(const InputFrame &p_frame) {
 }
 
 void NetworkInput::reset() {
+	_samples.clear();
 	buffer.clear();
 }
 
@@ -86,6 +150,8 @@ void NetworkInput::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_replica_config", "config"), &NetworkInput::set_replica_config);
 	ClassDB::bind_method(D_METHOD("get_replica_config"), &NetworkInput::get_replica_config);
+
+	ClassDB::bind_method(D_METHOD("sample", "property", "value"), &NetworkInput::sample);
 
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "replica_config", PROPERTY_HINT_RESOURCE_TYPE, "NetworkInputReplicaConfig", PROPERTY_USAGE_NO_EDITOR | PROPERTY_USAGE_EDITOR_INSTANTIATE_OBJECT), "set_replica_config", "get_replica_config");
 }

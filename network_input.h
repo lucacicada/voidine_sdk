@@ -15,6 +15,12 @@ class NetworkInput : public Node {
 	GDCLASS(NetworkInput, Node)
 
 private:
+	struct InputSample {
+		uint32_t samples = 0;
+		Variant accumulated;
+	};
+	HashMap<NodePath, InputSample> _samples;
+
 	uint64_t _last_frame_id = 0;
 	RingBuffer<InputFrame> buffer;
 
@@ -38,6 +44,8 @@ public:
 
 	void gather();
 	void replay();
+
+	void sample(const NodePath &p_property, const Variant &p_value);
 
 	Error copy_buffer(Vector<InputFrame> &frames, int p_count);
 	void write_frame(const InputFrame &p_frame);
