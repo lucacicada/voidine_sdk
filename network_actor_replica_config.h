@@ -3,9 +3,9 @@
 #include "core/io/resource.h"
 #include "core/variant/typed_array.h"
 
-class NetworkReplicaConfig : public Resource {
-	GDCLASS(NetworkReplicaConfig, Resource);
-	OBJ_SAVE_TYPE(NetworkReplicaConfig);
+class NetworkActorReplicaConfig : public Resource {
+	GDCLASS(NetworkActorReplicaConfig, Resource);
+	OBJ_SAVE_TYPE(NetworkActorReplicaConfig);
 	RES_BASE_EXTENSION("rrc");
 
 protected:

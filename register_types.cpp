@@ -2,11 +2,11 @@
 
 #include "circular_buffer.h"
 #include "network.h"
+#include "network_actor.h"
 #include "network_input.h"
 #include "network_input_replica_config.h"
+#include "network_actor_replica_config.h"
 #include "rollback_multiplayer.h"
-#include "network_replica_config.h"
-#include "network_actor.h"
 #include "rollback_tree.h"
 
 #ifdef TOOLS_ENABLED
@@ -31,7 +31,7 @@ void initialize_voidine_sdk_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(NetworkInputReplicaConfig);
 
 		GDREGISTER_CLASS(NetworkActor);
-		GDREGISTER_CLASS(NetworkReplicaConfig);
+		GDREGISTER_CLASS(NetworkActorReplicaConfig);
 
 		GDREGISTER_CLASS(RollbackTree);
 		GDREGISTER_CLASS(RollbackMultiplayer);

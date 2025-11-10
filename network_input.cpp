@@ -101,7 +101,7 @@ void NetworkInput::_start() {
 	}
 #endif
 	reset();
-	get_multiplayer()->object_configuration_add(this, Variant());
+	get_multiplayer()->object_configuration_add(this, this);
 }
 
 void NetworkInput::_stop() {
@@ -110,7 +110,7 @@ void NetworkInput::_stop() {
 		return;
 	}
 #endif
-	get_multiplayer()->object_configuration_remove(this, Variant());
+	get_multiplayer()->object_configuration_remove(this, this);
 	reset();
 }
 

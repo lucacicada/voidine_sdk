@@ -1,8 +1,9 @@
 #pragma once
 
+#include "network_input.h"
+
 #include "core/object/ref_counted.h"
 #include "core/templates/local_vector.h"
-#include "network_input.h"
 
 class RollbackMultiplayer;
 class NetworkInput;
@@ -17,6 +18,8 @@ private:
 	};
 
 	HashMap<ObjectID, InputState> inputs;
+	HashMap<int, ObjectID> peer_inputs;
+
 	RollbackMultiplayer *multiplayer = nullptr;
 
 	Error _send_local_inputs();
@@ -24,9 +27,11 @@ private:
 	Vector<uint8_t> packet_cache;
 	Error _send_raw(const uint8_t *p_buffer, int p_size, int p_peer, bool p_reliable);
 
+	void _input_ready(const ObjectID &p_oid);
+
 public:
-	Error add_input(NetworkInput *p_input);
-	Error remove_input(NetworkInput *p_input);
+	Error add_input(Object *p_obj, Variant p_config);
+	Error remove_input(Object *p_obj, Variant p_config);
 
 	void gather_inputs();
 	void process_inputs(int p_from, const uint8_t *p_packet, int p_packet_len);

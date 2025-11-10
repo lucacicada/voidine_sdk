@@ -3,20 +3,75 @@
 #include "network_input.h"
 #include "rollback_multiplayer.h"
 
-Error InputReplicaInterface::add_input(NetworkInput *p_input) {
-	ERR_FAIL_COND_V(!p_input, ERR_INVALID_PARAMETER);
-	inputs.insert(p_input->get_instance_id(), InputState());
+void InputReplicaInterface::_input_ready(const ObjectID &p_oid) {
+	NetworkInput *input = p_oid.is_valid() ? ObjectDB::get_instance<NetworkInput>(p_oid) : nullptr;
+	ERR_FAIL_NULL(input); // should never happen
+
+	// on the server track all inputs
+	// on the client, only add inputs that are authoritative (local)
+	if (multiplayer->is_server() || input->is_multiplayer_authority()) {
+		inputs.insert(p_oid, InputState());
+
+		int peer_id = input->get_multiplayer_authority();
+
+		// TODO: NetworkInput should target the root node that is responsible to set the authority
+		// ERR_FAIL_COND_MSG(peer_inputs.has(peer_id), vformat("Input already registered for peer %d.", peer_id));
+
+		peer_inputs.insert(peer_id, p_oid); // override for now, this wont cause issue as long as NetworkInput unregister itself
+	}
+}
+
+Error InputReplicaInterface::add_input(Object *p_obj, Variant p_config) {
+	Node *node = Object::cast_to<Node>(p_obj);
+	ERR_FAIL_COND_V(!node || p_config.get_type() != Variant::OBJECT, ERR_INVALID_PARAMETER);
+	NetworkInput *input = Object::cast_to<NetworkInput>(p_config.get_validated_object());
+	ERR_FAIL_NULL_V(input, ERR_INVALID_PARAMETER);
+
+	const ObjectID oid = input->get_instance_id();
+
+	// delay the initialization until the node is ready
+	// this will give a chance for the input to configure it's own authority
+	if (node->is_ready()) {
+		_input_ready(oid);
+	} else {
+		node->connect(SceneStringName(ready), callable_mp(this, &InputReplicaInterface::_input_ready).bind(oid), Node::CONNECT_ONE_SHOT);
+	}
+
 	return OK;
 }
 
-Error InputReplicaInterface::remove_input(NetworkInput *p_input) {
-	ERR_FAIL_COND_V(!p_input, ERR_INVALID_PARAMETER);
-	inputs.erase(p_input->get_instance_id());
+Error InputReplicaInterface::remove_input(Object *p_obj, Variant p_config) {
+	Node *node = Object::cast_to<Node>(p_obj);
+	ERR_FAIL_COND_V(!node || p_config.get_type() != Variant::OBJECT, ERR_INVALID_PARAMETER);
+	NetworkInput *input = Object::cast_to<NetworkInput>(p_config.get_validated_object());
+	ERR_FAIL_NULL_V(input, ERR_INVALID_PARAMETER);
+
+	const ObjectID oid = input->get_instance_id();
+
+	inputs.erase(oid);
+	for (const KeyValue<int, ObjectID> &E : peer_inputs) {
+		if (E.value == oid) {
+			peer_inputs.erase(E.key);
+			break;
+		}
+	}
+
 	return OK;
 }
 
 void InputReplicaInterface::gather_inputs() {
 	// TODO: sample inputs here if enabled?
+
+	// to sample inputs we must collect them during idle (process) frame
+	// int samples = 0;
+	// _process() {
+	//  _gather();
+	// 	samples++;
+	//  for (prop in props) {
+	//    cached_props[prop] += current_value[prop]
+	//  }
+	// }
+
 	for (KeyValue<ObjectID, InputState> &E : inputs) {
 		const ObjectID &oid = E.key;
 		NetworkInput *input = oid.is_valid() ? ObjectDB::get_instance<NetworkInput>(oid) : nullptr;

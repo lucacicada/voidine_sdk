@@ -1,5 +1,6 @@
 #include "rollback_multiplayer.h"
 #include "network.h"
+#include "network_actor.h"
 #include "network_input.h"
 #include "rollback_tree.h"
 
@@ -20,50 +21,48 @@ void RollbackMultiplayer::set_multiplayer_peer(const Ref<MultiplayerPeer> &p_pee
 }
 
 Error RollbackMultiplayer::object_configuration_add(Object *p_obj, Variant p_config) {
-	// if (p_obj == nullptr && p_config.get_type() == Variant::NODE_PATH) {
-	// 	if (SceneTree::get_singleton()->get_multiplayer() == this) {
-	// 		const NodePath tree_root_path = NodePath("/" + SceneTree::get_singleton()->get_root()->get_name());
-	// 		if (p_config == tree_root_path) {
-	// 			// we are getting set to the root tree, start the simulation
-	// 		}
-	// 	}
-	// }
+	if (p_obj == nullptr && p_config.get_type() == Variant::NODE_PATH) {
+		return SceneMultiplayer::object_configuration_add(p_obj, p_config);
 
-	if (p_obj != nullptr) {
-		NetworkInput *input = Object::cast_to<NetworkInput>(p_obj);
-		if (input != nullptr) {
-			if (is_server()) {
-				// on the server track all inputs
-				return input_replication->add_input(input);
-			}
-			if (input->is_multiplayer_authority()) {
-				// on the client, only add inputs that are authoritative (local)
-				return input_replication->add_input(input);
-			}
-			// the error is unused by the engine and is mainly for override purposes
-			// in this case untracked inputs are not an error but intended behavior
-			return OK;
-		}
+		// if (SceneTree::get_singleton()->get_multiplayer() == this) {
+		// 	const NodePath tree_root_path = NodePath("/" + SceneTree::get_singleton()->get_root()->get_name());
+		// 	if (p_config == tree_root_path) {
+		// 		// we are getting set to the root tree, start the simulation
+		// 	}
+		// }
+	}
+
+	NetworkInput *input = Object::cast_to<NetworkInput>(p_config.get_validated_object());
+	NetworkActor *actor = Object::cast_to<NetworkActor>(p_config.get_validated_object());
+
+	if (input) {
+		return input_replication->add_input(p_obj, p_config);
+	} else if (actor) {
+		return OK;
 	}
 
 	return SceneMultiplayer::object_configuration_add(p_obj, p_config);
 }
 
 Error RollbackMultiplayer::object_configuration_remove(Object *p_obj, Variant p_config) {
-	// if (p_obj == nullptr && p_config.get_type() == Variant::NODE_PATH) {
-	// 	if (SceneTree::get_singleton()->get_multiplayer() == this) {
-	// 		const NodePath tree_root_path = NodePath("/" + SceneTree::get_singleton()->get_root()->get_name());
-	// 		if (p_config == tree_root_path) {
-	// 			// we are getting removed from the root tree, end the simulation
-	// 		}
-	// 	}
-	// }
+	if (p_obj == nullptr && p_config.get_type() == Variant::NODE_PATH) {
+		return SceneMultiplayer::object_configuration_remove(p_obj, p_config);
 
-	if (p_obj != nullptr) {
-		NetworkInput *input = Object::cast_to<NetworkInput>(p_obj);
-		if (input != nullptr) {
-			return input_replication->remove_input(input);
-		}
+		// 	if (SceneTree::get_singleton()->get_multiplayer() == this) {
+		// 		const NodePath tree_root_path = NodePath("/" + SceneTree::get_singleton()->get_root()->get_name());
+		// 		if (p_config == tree_root_path) {
+		// 			// we are getting removed from the root tree, end the simulation
+		// 		}
+		// 	}
+	}
+
+	NetworkInput *input = Object::cast_to<NetworkInput>(p_config.get_validated_object());
+	NetworkActor *actor = Object::cast_to<NetworkActor>(p_config.get_validated_object());
+
+	if (input) {
+		return input_replication->remove_input(p_obj, p_config);
+	} else if (actor) {
+		return OK;
 	}
 
 	return SceneMultiplayer::object_configuration_remove(p_obj, p_config);
@@ -254,7 +253,6 @@ void RollbackMultiplayer::_adjust_clock() {
 }
 
 void RollbackMultiplayer::before_physic_process() {
-	// gather inputs from registered NetworkInput nodes
 	input_replication->gather_inputs();
 }
 

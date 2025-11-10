@@ -1,6 +1,6 @@
 #include "rollback_synchronizer_editor.h"
 
-#include "../network_replica_config.h"
+#include "../network_actor_replica_config.h"
 #include "../network_actor.h"
 
 #include "editor/editor_node.h"
