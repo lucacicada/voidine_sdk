@@ -7,17 +7,9 @@ void InputReplicaInterface::_input_ready(const ObjectID &p_oid) {
 	NetworkInput *input = p_oid.is_valid() ? ObjectDB::get_instance<NetworkInput>(p_oid) : nullptr;
 	ERR_FAIL_NULL(input); // should never happen
 
-	// on the server track all inputs
-	// on the client, only add inputs that are authoritative (local)
-	if (multiplayer->is_server() || input->is_multiplayer_authority()) {
+	// only track add autoritative inputs
+	if (input->is_input_authority()) {
 		inputs.insert(p_oid, InputState());
-
-		int peer_id = input->get_multiplayer_authority();
-
-		// TODO: NetworkInput should target the root node that is responsible to set the authority
-		// ERR_FAIL_COND_MSG(peer_inputs.has(peer_id), vformat("Input already registered for peer %d.", peer_id));
-
-		peer_inputs.insert(peer_id, p_oid); // override for now, this wont cause issue as long as NetworkInput unregister itself
 	}
 }
 
@@ -47,19 +39,11 @@ Error InputReplicaInterface::remove_input(Object *p_obj, Variant p_config) {
 	ERR_FAIL_NULL_V(input, ERR_INVALID_PARAMETER);
 
 	const ObjectID oid = input->get_instance_id();
-
 	inputs.erase(oid);
-	for (const KeyValue<int, ObjectID> &E : peer_inputs) {
-		if (E.value == oid) {
-			peer_inputs.erase(E.key);
-			break;
-		}
-	}
-
 	return OK;
 }
 
-void InputReplicaInterface::gather_inputs() {
+void InputReplicaInterface::capture_inputs() {
 	for (KeyValue<ObjectID, InputState> &E : inputs) {
 		const ObjectID &oid = E.key;
 		NetworkInput *input = oid.is_valid() ? ObjectDB::get_instance<NetworkInput>(oid) : nullptr;
@@ -73,7 +57,8 @@ void InputReplicaInterface::gather_inputs() {
 			input->replay(); // replay from buffer on server
 		}
 	}
-
+}
+void InputReplicaInterface::release_inputs() {
 	// only the client can send
 	if (multiplayer->get_rollback_state() == RollbackMultiplayer::ROLLBACK_STATE_CLIENT) {
 		_send_local_inputs();
@@ -98,7 +83,7 @@ Error InputReplicaInterface::_send_local_inputs() {
 	Ref<NetworkInputReplicaConfig> replica_config = input->get_replica_config();
 	ERR_FAIL_COND_V(replica_config.is_null(), ERR_UNCONFIGURED);
 
-	const TypedArray<NodePath> props = replica_config->get_properties();
+	const Vector<NodePath> props = replica_config->get_replica_properties();
 	ERR_FAIL_COND_V(props.is_empty(), ERR_UNCONFIGURED);
 
 	Vector<InputFrame> frames;
@@ -172,7 +157,7 @@ void InputReplicaInterface::process_inputs(int p_from, const uint8_t *p_packet, 
 	ERR_FAIL_COND_MSG(!input || !input_state, "Received input packet from unknown peer.");
 	Ref<NetworkInputReplicaConfig> replica_config = input->get_replica_config();
 	ERR_FAIL_COND_MSG(replica_config.is_null(), "Received input from peer with no configured replica.");
-	const TypedArray<NodePath> props = replica_config->get_properties();
+	const Vector<NodePath> props = replica_config->get_replica_properties();
 	ERR_FAIL_COND_MSG(props.is_empty(), "Received input from peer with no configured properties.");
 
 	// ERR_FAIL_COND_MSG(input_state->input_buffer.space_left() < frames_count, "Not enough space in input buffer to store received input frames.");

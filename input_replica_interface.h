@@ -18,7 +18,6 @@ private:
 	};
 
 	HashMap<ObjectID, InputState> inputs;
-	HashMap<int, ObjectID> peer_inputs;
 
 	RollbackMultiplayer *multiplayer = nullptr;
 
@@ -33,7 +32,8 @@ public:
 	Error add_input(Object *p_obj, Variant p_config);
 	Error remove_input(Object *p_obj, Variant p_config);
 
-	void gather_inputs();
+	void capture_inputs();
+	void release_inputs();
 	void process_inputs(int p_from, const uint8_t *p_packet, int p_packet_len);
 
 	InputReplicaInterface(RollbackMultiplayer *p_multiplayer) {

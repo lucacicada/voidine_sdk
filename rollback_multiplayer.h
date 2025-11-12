@@ -87,7 +87,7 @@ public:
 	virtual bool is_online_server() const;
 
 	virtual void before_physic_process();
-	virtual void after_physic_process() {}
+	virtual void after_physic_process();
 
 	RollbackMultiplayer();
 	~RollbackMultiplayer();

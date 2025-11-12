@@ -20,10 +20,11 @@ private:
 		Variant accumulated;
 	};
 
-	// TODO: Use StringName instead of NodePath
+	// TODO: Use StringName instead of NodePath?
 	HashMap<NodePath, InputSample> _samples;
 
-	uint64_t _last_frame_id = 0;
+	uint64_t _current_frame_id = 0;
+	uint64_t last_aknownedged_input_id = 0;
 	RingBuffer<InputFrame> buffer;
 
 	Ref<NetworkInputReplicaConfig> replica_config;
@@ -38,6 +39,7 @@ protected:
 
 public:
 	GDVIRTUAL0(_gather); // for compatibility
+	GDVIRTUAL0(_input_applied);
 
 	virtual void set_multiplayer_authority(int p_peer_id, bool p_recursive = true) override;
 
@@ -53,6 +55,9 @@ public:
 	void write_frame(const InputFrame &p_frame);
 
 	bool is_input_authority() const;
+
+	// command_id
+	int get_current_frame() const { return last_aknownedged_input_id; }
 
 	NetworkInput();
 };

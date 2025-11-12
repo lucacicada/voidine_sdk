@@ -36,15 +36,12 @@ void NetworkInput::sample(const NodePath &p_property, const Variant &p_value) {
 	if (!_samples.has(p_property)) {
 		InputSample sample;
 		sample.accumulated = p_value;
+		sample.samples = 1;
 		_samples.insert(p_property, sample);
+		return;
 	}
 
 	InputSample &sample = _samples[p_property];
-	ERR_FAIL_COND_MSG(sample.accumulated.get_type() != p_value.get_type(),
-			vformat("Type mismatch when sampling property '%s'. Expected type: %s, got: %s.",
-					p_property,
-					Variant::get_type_name(sample.accumulated.get_type()),
-					Variant::get_type_name(p_value.get_type())));
 
 	switch (p_value.get_type()) {
 		case Variant::VECTOR2:
@@ -70,15 +67,10 @@ void NetworkInput::sample(const NodePath &p_property, const Variant &p_value) {
 }
 
 void NetworkInput::gather() {
-	ERR_FAIL_COND(replica_config.is_null());
-	const TypedArray<NodePath> props = replica_config->get_properties();
-
 	for (const KeyValue<NodePath, InputSample> &E : _samples) {
 		const NodePath &prop = E.key;
 		const InputSample &sample = E.value;
-
 		Variant averaged_value = sample.accumulated;
-
 		if (sample.samples > 1) {
 			switch (averaged_value.get_type()) {
 				case Variant::VECTOR2:
@@ -93,31 +85,45 @@ void NetworkInput::gather() {
 				} break;
 			}
 		}
-
-		ERR_FAIL_COND_MSG(!props.has(prop), vformat("Input property '%s' is not registered for replication.", prop));
 		set_indexed(prop.get_names(), averaged_value);
 	}
 
 	_samples.clear();
 
+	++_current_frame_id; // actually make sure we advance the frame before sending the call to the virtual method
+
 	GDVIRTUAL_CALL(_gather); // TODO: return if the call have failed?
 
-	InputFrame frame;
-	frame.frame_id = ++_last_frame_id;
+	if (replica_config.is_null()) {
+		return; // do not care if there is no config, we just wont replicate anything
+	}
 
+	InputFrame frame;
+	frame.frame_id = _current_frame_id;
+
+	const Vector<NodePath> props = replica_config->get_replica_properties();
 	for (const NodePath &prop : props) {
 		bool valid = false;
 		Variant v = get_indexed(prop.get_names(), &valid);
+
+		// we must fail here, since we need to know the exact property type to serialize it later
+		// it is possible to pass in null for invalid properties and still make this work
+		// but that would hide potential bugs in the configuration
+		// the dev is responsible to set everything up correctly
+		// input usually must be deterministic and fully known beforehand between server and clients
 		ERR_FAIL_COND_MSG(!valid, vformat("Property '%s' not found.", prop));
+
 		frame.properties.insert(prop, v);
 	}
 
 	write_frame(frame);
+
+	GDVIRTUAL_CALL(_input_applied);
 }
 
 void NetworkInput::replay() {
 	ERR_FAIL_COND(replica_config.is_null());
-	const TypedArray<NodePath> props = replica_config->get_properties();
+	const Vector<NodePath> props = replica_config->get_replica_properties();
 
 	if (buffer.data_left() == 0) {
 		return; // TODO: replay the oldest
@@ -129,6 +135,8 @@ void NetworkInput::replay() {
 		ERR_CONTINUE_MSG(!frame.properties.has(prop), vformat("Property '%s' not found in input frame.", prop));
 		set_indexed(prop.get_names(), frame.properties[prop]);
 	}
+
+	GDVIRTUAL_CALL(_input_applied);
 }
 
 void NetworkInput::write_frame(const InputFrame &p_frame) {
@@ -138,6 +146,7 @@ void NetworkInput::write_frame(const InputFrame &p_frame) {
 		buffer.advance_read(1);
 	}
 	buffer.write(p_frame);
+	last_aknownedged_input_id = p_frame.frame_id;
 }
 
 void NetworkInput::reset() {
@@ -150,6 +159,9 @@ bool NetworkInput::is_input_authority() const {
 		return false;
 	}
 
+	// this method essentially check if the input is operational
+	// a non-authoritative input cannot gather and practically act as an empty node
+
 	// server can process every input
 	// clients can process only local inputs
 
@@ -159,6 +171,9 @@ bool NetworkInput::is_input_authority() const {
 
 void NetworkInput::_bind_methods() {
 	GDVIRTUAL_BIND(_gather);
+	GDVIRTUAL_BIND(_input_applied);
+
+	ClassDB::bind_method(D_METHOD("get_current_frame"), &NetworkInput::get_current_frame);
 
 	ClassDB::bind_method(D_METHOD("set_replica_config", "config"), &NetworkInput::set_replica_config);
 	ClassDB::bind_method(D_METHOD("get_replica_config"), &NetworkInput::get_replica_config);

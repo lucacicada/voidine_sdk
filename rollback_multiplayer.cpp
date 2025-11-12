@@ -253,7 +253,10 @@ void RollbackMultiplayer::_adjust_clock() {
 }
 
 void RollbackMultiplayer::before_physic_process() {
-	input_replication->gather_inputs();
+	input_replication->capture_inputs();
+}
+void RollbackMultiplayer::after_physic_process() {
+	input_replication->release_inputs();
 }
 
 void RollbackMultiplayer::_bind_methods() {

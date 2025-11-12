@@ -59,16 +59,20 @@ void NetworkInputReplicaConfig::add_property(const NodePath &p_path, int p_index
 
 	if (p_index < 0 || p_index >= properties.size()) {
 		properties.push_back(InputProperty(p_path));
-		return;
+	} else {
+		List<InputProperty>::Element *I = properties.front();
+		int c = 0;
+		while (c < p_index) {
+			I = I->next();
+			c++;
+		}
+		properties.insert_before(I, InputProperty(p_path));
 	}
 
-	List<InputProperty>::Element *I = properties.front();
-	int c = 0;
-	while (c < p_index) {
-		I = I->next();
-		c++;
+	replica_props.clear();
+	for (const InputProperty &prop : properties) {
+		replica_props.push_back(prop.name);
 	}
-	properties.insert_before(I, InputProperty(p_path));
 }
 
 void NetworkInputReplicaConfig::remove_property(const NodePath &p_path) {
@@ -94,26 +98,9 @@ int NetworkInputReplicaConfig::property_get_index(const NodePath &p_path) const 
 	ERR_FAIL_V(-1);
 }
 
-// void NetworkInputReplicaConfig::property_set_index(const NodePath &p_path, int p_index) {
-// 	List<InputProperty>::Element *E = properties.find(p_path);
-// 	ERR_FAIL_COND(!E);
-
-// 	InputProperty prop = E->get();
-// 	properties.erase(E);
-
-// 	if (p_index < 0 || p_index >= properties.size()) {
-// 		properties.push_back(prop);
-// 		return;
-// 	}
-
-// 	List<InputProperty>::Element *I = properties.front();
-// 	int c = 0;
-// 	while (c < p_index) {
-// 		I = I->next();
-// 		c++;
-// 	}
-// 	properties.insert_before(I, prop);
-// }
+const Vector<NodePath> &NetworkInputReplicaConfig::get_replica_properties() {
+	return replica_props;
+}
 
 void NetworkInputReplicaConfig::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_properties"), &NetworkInputReplicaConfig::get_properties);
