@@ -44,6 +44,4 @@ Network::~Network() {
 
 	memdelete(_reference_clock_ptr);
 	memdelete(_simulation_clock_ptr);
-	_reference_clock_ptr = nullptr;
-	_simulation_clock_ptr = nullptr;
 }

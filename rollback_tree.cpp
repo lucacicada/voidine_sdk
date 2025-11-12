@@ -4,6 +4,8 @@
 #include "network_input.h"
 #include "rollback_multiplayer.h"
 
+#include "main/main_timer_sync.h"
+
 void RollbackTree::initialize() {
 	SceneTree::initialize();
 
@@ -12,6 +14,20 @@ void RollbackTree::initialize() {
 	Network::get_singleton()->_in_rollback = false;
 	Network::get_singleton()->_network_frames = 0;
 }
+
+// void RollbackTree::advance(MainFrameTime &p_time) {
+// 	const int max_physics_steps = Engine::get_singleton()->get_max_physics_steps_per_frame();
+// 	const int physics_ticks_per_second = Engine::get_singleton()->get_physics_ticks_per_second();
+// 	const double physics_step = 1.0 / physics_ticks_per_second;
+
+// 	Network::get_singleton()->_simulation_clock_ptr->step();
+// 	Network::get_singleton()->_simulation_clock_ptr->advance(physics_step, max_physics_steps);
+
+// 	// pretend the simulation run faster/slower to catch up
+// 	Network::get_singleton()->_simulation_clock_ptr->adjust_towards(Network::get_singleton()->_reference_clock_ptr->get_time(), physics_step);
+
+// 	p_time.physics_steps = Network::get_singleton()->_simulation_clock_ptr->steps;
+// }
 
 // deterministic lockstep with rollover
 int RollbackTree::get_override_physics_steps() {

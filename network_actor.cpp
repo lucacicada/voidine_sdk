@@ -1,7 +1,35 @@
 #include "network_actor.h"
 
 #include "core/config/engine.h"
+#include "scene/2d/node_2d.h"
 #include "scene/main/multiplayer_api.h"
+
+bool NetworkActor::_set(const StringName &p_name, const Variant &p_value) {
+	print_line(vformat("SET: %s", p_name));
+
+	if (p_name == "state_position") {
+		return true;
+	}
+
+	return false;
+}
+
+bool NetworkActor::_get(const StringName &p_name, Variant &r_ret) const {
+	print_line(vformat("GET: %s", p_name));
+
+	String prop_name = p_name;
+	if (p_name == "state_position") {
+		r_ret = Vector2();
+		return true;
+	}
+
+	return false;
+}
+
+void NetworkActor::_get_property_list(List<PropertyInfo> *p_list) const {
+	print_line(vformat("_get_property_list"));
+	p_list->push_back(PropertyInfo(Variant::VECTOR2, "state_position", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NO_EDITOR | PROPERTY_USAGE_INTERNAL));
+}
 
 void NetworkActor::_start() {
 #ifdef TOOLS_ENABLED
@@ -13,10 +41,15 @@ void NetworkActor::_start() {
 	reset();
 	Node *node = is_inside_tree() ? get_node_or_null(root_path) : nullptr;
 	if (node) {
+		Node2D *node_2d = Object::cast_to<Node2D>(node);
+		if (node_2d) {
+		}
+
 		root_node_cache = node->get_instance_id();
 		get_multiplayer()->object_configuration_add(node, this);
 	}
 }
+
 void NetworkActor::_stop() {
 #ifdef TOOLS_ENABLED
 	if (Engine::get_singleton()->is_editor_hint()) {
@@ -91,7 +124,7 @@ PackedStringArray NetworkActor::get_configuration_warnings() const {
 	PackedStringArray warnings = Node::get_configuration_warnings();
 
 	if (root_path.is_empty() || !has_node(root_path)) {
-		warnings.push_back(RTR("A valid NodePath must be set in the \"Root Path\" property in order for RollbackSynchronizer to be able to synchronize properties."));
+		warnings.push_back(RTR("A valid NodePath must be set in the \"Root Path\" property in order for NetworkActor to be able to synchronize properties."));
 	}
 
 	return warnings;
@@ -109,4 +142,16 @@ void NetworkActor::_bind_methods() {
 }
 
 NetworkActor::NetworkActor() {
+	_replication_config.instantiate();
+	_multiplayer_synchronizer = memnew(MultiplayerSynchronizer);
+	_multiplayer_synchronizer->set_name("Replica");
+	_multiplayer_synchronizer->set_replication_interval(1.0 / 60.0);
+	_multiplayer_synchronizer->set_delta_interval(1.0 / 5.0);
+	_multiplayer_synchronizer->set_replication_config(_replication_config);
+
+	add_child(_multiplayer_synchronizer, true, INTERNAL_MODE_FRONT);
+}
+
+NetworkActor::~NetworkActor() {
+	_replication_config.unref();
 }

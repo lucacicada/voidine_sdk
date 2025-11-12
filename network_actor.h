@@ -1,6 +1,9 @@
 #pragma once
 
 #include "network_actor_replica_config.h"
+
+#include "modules/multiplayer/multiplayer_synchronizer.h"
+#include "modules/multiplayer/scene_replication_config.h"
 #include "scene/main/node.h"
 
 // NetworkEntity is ok
@@ -9,6 +12,9 @@ class NetworkActor : public Node {
 	GDCLASS(NetworkActor, Node)
 
 private:
+	Ref<SceneReplicationConfig> _replication_config;
+	MultiplayerSynchronizer *_multiplayer_synchronizer;
+
 	ObjectID root_node_cache;
 	Ref<NetworkActorReplicaConfig> replica_config;
 	NodePath root_path = NodePath("..");
@@ -23,6 +29,10 @@ protected:
 
 	void _notification(int p_what);
 
+	bool _set(const StringName &p_name, const Variant &p_value);
+	bool _get(const StringName &p_name, Variant &r_ret) const;
+	void _get_property_list(List<PropertyInfo> *p_list) const;
+
 public:
 	PackedStringArray get_configuration_warnings() const override;
 
@@ -35,4 +45,5 @@ public:
 	virtual void set_multiplayer_authority(int p_peer_id, bool p_recursive = true) override;
 
 	NetworkActor();
+	~NetworkActor();
 };

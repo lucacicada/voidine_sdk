@@ -20,6 +20,7 @@ private:
 public:
 	static RollbackTree *get_singleton() { return singleton; }
 
+	// virtual void advance(MainFrameTime &p_time) override;
 	virtual int get_override_physics_steps() override;
 	virtual void initialize() override;
 	virtual void iteration_prepare() override;
