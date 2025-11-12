@@ -3,9 +3,9 @@
 #include "circular_buffer.h"
 #include "network.h"
 #include "network_actor.h"
+#include "network_actor_replica_config.h"
 #include "network_input.h"
 #include "network_input_replica_config.h"
-#include "network_actor_replica_config.h"
 #include "rollback_multiplayer.h"
 #include "rollback_tree.h"
 
@@ -22,16 +22,16 @@ void initialize_voidine_sdk_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
 		GDREGISTER_CLASS(CircularBuffer);
 
-		GDREGISTER_CLASS(Network);
-
 		GDREGISTER_CLASS(ReferenceClock);
 		GDREGISTER_CLASS(SimulationClock);
 
-		GDREGISTER_CLASS(NetworkInput);
-		GDREGISTER_CLASS(NetworkInputReplicaConfig);
+		GDREGISTER_CLASS(Network);
 
-		GDREGISTER_CLASS(NetworkActor);
 		GDREGISTER_CLASS(NetworkActorReplicaConfig);
+		GDREGISTER_CLASS(NetworkActor);
+
+		GDREGISTER_CLASS(NetworkInputReplicaConfig);
+		GDREGISTER_CLASS(NetworkInput);
 
 		GDREGISTER_CLASS(RollbackTree);
 		GDREGISTER_CLASS(RollbackMultiplayer);
@@ -63,6 +63,5 @@ void uninitialize_voidine_sdk_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
 		// Engine::get_singleton()->remove_singleton("Network");
 		memdelete(_network);
-		_network = nullptr;
 	}
 }
