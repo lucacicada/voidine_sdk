@@ -19,43 +19,34 @@ class NetworkInputEditor : public VBoxContainer {
 	GDCLASS(NetworkInputEditor, VBoxContainer);
 
 private:
-	static const uint32_t TYPE_BOOL_SIZE = 1;
-	static const uint32_t TYPE_INT_SIZE = 64;
-	static const uint32_t TYPE_FLOAT_SIZE = 64;
-
-	static const uint32_t TYPE_VECTOR2_SIZE = (sizeof(real_t) * 8) * 2; // x, y
-	static const uint32_t TYPE_VECTOR2I_SIZE = (sizeof(real_t) * 8) * 2; // x, y
-	static const uint32_t TYPE_VECTOR3_SIZE = (sizeof(real_t) * 8) * 3; // x, y, z
-	static const uint32_t TYPE_VECTOR3I_SIZE = (sizeof(real_t) * 8) * 3; // x, y, z
-	static const uint32_t TYPE_VECTOR4_SIZE = (sizeof(real_t) * 8) * 4; // x, y, z, w
-	static const uint32_t TYPE_VECTOR4I_SIZE = (sizeof(real_t) * 8) * 4; // x, y, z, w
-	static const uint32_t TYPE_RECT2_SIZE = (sizeof(real_t) * 8) * 4; // position.x, position.y, size.x, size.y
-	static const uint32_t TYPE_RECT2I_SIZE = (sizeof(real_t) * 8) * 4; // position.x, position.y, size.x, size.y
-
 	static int get_type_size_in_bits(Variant::Type p_type) {
 		switch (p_type) {
 			case Variant::BOOL:
-				return TYPE_BOOL_SIZE;
+				return 1;
 			case Variant::INT:
-				return TYPE_INT_SIZE;
+				return (sizeof(uint64_t) * 8);
 			case Variant::FLOAT:
-				return TYPE_FLOAT_SIZE;
+				return (sizeof(uint64_t) * 8);
+
 			case Variant::VECTOR2:
-				return TYPE_VECTOR2_SIZE;
-			case Variant::VECTOR2I:
-				return TYPE_VECTOR2I_SIZE;
+				return (sizeof(real_t) * 8) * 2;
 			case Variant::VECTOR3:
-				return TYPE_VECTOR3_SIZE;
-			case Variant::VECTOR3I:
-				return TYPE_VECTOR3I_SIZE;
+				return (sizeof(real_t) * 8) * 4;
 			case Variant::VECTOR4:
-				return TYPE_VECTOR4_SIZE;
+				return (sizeof(real_t) * 8) * 4;
+
+			case Variant::VECTOR2I:
+				return (sizeof(uint32_t) * 8) * 3;
+			case Variant::VECTOR3I:
+				return (sizeof(uint32_t) * 8) * 4;
 			case Variant::VECTOR4I:
-				return TYPE_VECTOR4I_SIZE;
+				return (sizeof(uint32_t) * 8) * 4;
+
 			case Variant::RECT2:
-				return TYPE_RECT2_SIZE;
+				return (sizeof(real_t) * 8) * 4;
 			case Variant::RECT2I:
-				return TYPE_RECT2I_SIZE;
+				return (sizeof(uint32_t) * 8) * 4;
+
 			default:
 				return 0;
 		}

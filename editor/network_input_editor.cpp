@@ -101,8 +101,11 @@ void NetworkInputEditor::_tree_button_pressed(Object *p_item, int p_column, int 
 }
 
 struct PropertySizeSort {
-	_ALWAYS_INLINE_ bool operator()(const Pair<NodePath, int> &a, const Pair<NodePath, int> &b) const {
-		return a.second > b.second;
+	_ALWAYS_INLINE_ bool operator()(const Pair<NodePath, Pair<int, int>> &a, const Pair<NodePath, Pair<int, int>> &b) const {
+		if (a.second.first != b.second.first) {
+			return a.second.first > b.second.first;
+		}
+		return a.second.second < b.second.second;
 	}
 };
 
@@ -112,12 +115,12 @@ void NetworkInputEditor::_optimize_pressed() {
 	}
 
 	TypedArray<NodePath> props = config->get_properties();
-	LocalVector<Pair<NodePath, int>> prop_sizes;
+	LocalVector<Pair<NodePath, Pair<int, int>>> prop_sizes;
 	for (int i = 0; i < props.size(); i++) {
 		const NodePath path = props[i];
 		const Variant &prop_value = current ? current->get_indexed(path.get_names()) : Variant();
 		int s = get_type_size_in_bits(prop_value.get_type());
-		prop_sizes.push_back(Pair<NodePath, int>(path, s));
+		prop_sizes.push_back(Pair<NodePath, Pair<int, int>>(path, Pair<int, int>(s, i)));
 	}
 
 	prop_sizes.sort_custom<PropertySizeSort>();
@@ -142,10 +145,14 @@ void NetworkInputEditor::_update_config() {
 		drop_label->set_visible(false);
 	}
 
-	// MultiplayerAPI::decode_and_decompress_variants()
-	// For inputs we use a linear struct
 	int size_in_bits = 0;
 	int unused_bits = 0;
+
+	Vector<Variant> state_vars;
+	Vector<const Variant *> varp;
+
+	state_vars.resize(props.size());
+	varp.resize(state_vars.size());
 
 	for (int i = 0; i < props.size(); i++) {
 		const NodePath path = props[i];
@@ -154,6 +161,9 @@ void NetworkInputEditor::_update_config() {
 		//
 		const Variant &prop_value = current ? current->get_indexed(path.get_names()) : Variant();
 		int s = get_type_size_in_bits(prop_value.get_type());
+
+		state_vars.write[i] = prop_value;
+		varp.write[i] = &state_vars[i];
 
 		if (s <= 0) {
 			continue;
@@ -177,7 +187,10 @@ void NetworkInputEditor::_update_config() {
 		unused_bits += padding;
 	}
 
-	stats_label->set_text(vformat(TTR("Struct size: %d - Padding Bits: %d bits"), size_in_bits / 8, unused_bits));
+	int size;
+	MultiplayerAPI::encode_and_compress_variants(varp.ptrw(), varp.size(), nullptr, size);
+
+	stats_label->set_text(vformat(TTR("Struct size: %d - Padding Bits: %d bits - %d"), size_in_bits / 8, unused_bits, size));
 }
 
 void NetworkInputEditor::_add_property(const NodePath &p_property) {
@@ -187,9 +200,16 @@ void NetworkInputEditor::_add_property(const NodePath &p_property) {
 	item->set_selectable(1, false);
 	item->set_selectable(2, false);
 	item->set_selectable(3, false);
+	item->set_selectable(4, false);
 	item->set_text(0, prop);
 	item->set_metadata(0, prop);
-	item->add_button(3, get_theme_icon(SNAME("Remove"), EditorStringName(EditorIcons)));
+
+	item->set_text_alignment(3, HORIZONTAL_ALIGNMENT_CENTER);
+	item->set_cell_mode(3, TreeItem::CELL_MODE_CHECK);
+	item->set_checked(3, false);
+	item->set_editable(3, true);
+
+	item->add_button(4, get_theme_icon(SNAME("Remove"), EditorStringName(EditorIcons)));
 
 	bool prop_valid = false;
 	const Variant &prop_value = current ? current->get_indexed(p_property.get_names(), &prop_valid) : Variant();
@@ -354,7 +374,7 @@ NetworkInputEditor::NetworkInputEditor() {
 
 	tree = memnew(Tree);
 	tree->set_hide_root(true);
-	tree->set_columns(4);
+	tree->set_columns(5);
 	tree->set_column_titles_visible(true);
 	tree->set_column_title(0, TTR("Properties"));
 	tree->set_column_expand(0, true);
@@ -364,7 +384,10 @@ NetworkInputEditor::NetworkInputEditor() {
 	tree->set_column_title(2, TTR("Encoding"));
 	tree->set_column_custom_minimum_width(2, 100);
 	tree->set_column_expand(2, false);
+	tree->set_column_title(3, TTR("Sample"));
+	tree->set_column_custom_minimum_width(3, 100);
 	tree->set_column_expand(3, false);
+	tree->set_column_expand(4, false);
 	tree->create_item();
 	tree->connect("button_clicked", callable_mp(this, &NetworkInputEditor::_tree_button_pressed));
 	// tree->connect("item_edited", callable_mp(this, &NetworkInputEditor::_tree_item_edited));
